@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
     --folder)       FOLDER="$2"; shift 2 ;;
     --force-latex)  FORCE_LATEX=1; shift ;;
     --force-simple) FORCE_SIMPLE=1; shift ;;
-    -h|--help)      sed -n '2,16p' "$0" | sed 's|^# \?||'; exit 0 ;;
+    -h|--help)      awk '/^[^#]/{exit} NR>1{sub(/^# ?/,""); print}' "$0"; exit 0 ;;
     -*)             echo "未知参数: $1" >&2; exit 2 ;;
     *)              FILE="$1"; shift ;;
   esac

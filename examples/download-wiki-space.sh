@@ -11,6 +11,7 @@ WIKI_URL="${1:-}"
 
 # 加载 .env（如果存在）
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091  # .env 可能不存在或路径在运行时才确定
 [ -f "${PROJECT_ROOT}/.env" ] && set -a && source "${PROJECT_ROOT}/.env" && set +a
 
 # 自检

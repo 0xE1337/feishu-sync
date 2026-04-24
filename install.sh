@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --copy)     MODE="copy"; shift ;;
     --no-deps)  INSTALL_DEPS=0; shift ;;
-    -h|--help)  sed -n '2,13p' "$0" | sed 's|^# \?||'; exit 0 ;;
+    -h|--help)  awk '/^[^#]/{exit} NR>1{sub(/^# ?/,""); print}' "$0"; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done

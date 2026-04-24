@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
     -o|--out)    OUT_DIR="$2"; shift 2 ;;
     --recursive) RECURSIVE=1; shift ;;
     --auth)      AUTH_MODE="$2"; shift 2 ;;
-    -h|--help)   sed -n '2,13p' "$0" | sed 's|^# \?||'; exit 0 ;;
+    -h|--help)   awk '/^[^#]/{exit} NR>1{sub(/^# ?/,""); print}' "$0"; exit 0 ;;
     -*)          echo "未知参数: $1" >&2; exit 2 ;;
     *)           URL="$1"; shift ;;
   esac
@@ -34,7 +34,7 @@ done
 mkdir -p "$OUT_DIR"
 
 command -v feishu-docx >/dev/null 2>&1 || {
-  echo "[ERR] 未找到 feishu-docx，先跑 bash $(dirname $SCRIPT_DIR)/install.sh 或 bash $SCRIPT_DIR/setup.sh" >&2
+  echo "[ERR] 未找到 feishu-docx，先跑 bash $(dirname "$SCRIPT_DIR")/install.sh 或 bash $SCRIPT_DIR/setup.sh" >&2
   exit 1
 }
 
@@ -61,4 +61,4 @@ echo ""
 echo "[DONE] 产物："
 find "$OUT_DIR" -name "*.md" -type f 2>/dev/null | head -20
 echo "..."
-echo "总计 $(find $OUT_DIR -name '*.md' -type f 2>/dev/null | wc -l | xargs) 个 md 文件"
+echo "总计 $(find "$OUT_DIR" -name '*.md' -type f 2>/dev/null | wc -l | xargs) 个 md 文件"

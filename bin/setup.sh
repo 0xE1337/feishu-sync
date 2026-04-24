@@ -79,7 +79,7 @@ verify() {
   echo "[ready] 下一步："
   echo "  export FEISHU_APP_ID=cli_xxxxx"
   echo "  export FEISHU_APP_SECRET=xxxxx"
-  echo "  bash $(dirname $(realpath "$0"))/probe.sh   # 自检"
+  echo "  bash $(dirname "$(realpath "$0")")/probe.sh   # 自检"
 }
 
 install_feishu_docx
