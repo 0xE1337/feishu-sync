@@ -52,7 +52,7 @@ if grep -qE '\$\$' "$FILE"; then HAS_LATEX=1; fi
 if grep -qE '\$[^$]*\\(frac|sum|int|prod|sqrt|alpha|beta|gamma|delta|theta|lambda|mu|nu|pi|rho|sigma|tau|phi|omega)' "$FILE"; then HAS_LATEX=1; fi
 if grep -qE '\$[^$]*[\^_{]' "$FILE"; then HAS_LATEX=1; fi
 
-# 决策
+# 初始路由决策
 if [ "$FORCE_LATEX" -eq 1 ]; then
   ROUTE="uploader"
 elif [ "$FORCE_SIMPLE" -eq 1 ]; then
@@ -65,21 +65,41 @@ fi
 
 echo "[detect] LaTeX=${HAS_LATEX} → 路由到 ${ROUTE}"
 
+# ─── 可用性检测 + 自动降级 ────────────────────────────────────────
+# 只要任一工具可用就能传；缺哪个降到另一个，而不是硬挂
+has_feishu_docx() { command -v feishu-docx >/dev/null 2>&1; }
+has_uploader()    { [ -f "${UPLOADER_DIR}/upload.mjs" ]; }
+
+if [ "$ROUTE" = "feishu-docx" ] && ! has_feishu_docx; then
+  if has_uploader; then
+    echo "[fallback] feishu-docx 不可用（Python<3.7 或未安装）→ 降级到 Node uploader" >&2
+    [ -n "$FOLDER" ] && echo "[WARN] uploader 不支持 --folder，本次上传将落到应用沙箱云空间" >&2
+    ROUTE="uploader"
+  else
+    echo "[ERR] feishu-docx 和 Node uploader 都不可用；先跑 bash $SCRIPT_DIR/setup.sh" >&2
+    exit 1
+  fi
+fi
+
+if [ "$ROUTE" = "uploader" ] && ! has_uploader; then
+  if has_feishu_docx; then
+    [ "$HAS_LATEX" -eq 1 ] && \
+      echo "[WARN] 文档含 LaTeX 但 uploader 不可用，回退到 feishu-docx（公式可能渲染不准）" >&2 || \
+      echo "[fallback] uploader 不可用 → 降级到 feishu-docx" >&2
+    ROUTE="feishu-docx"
+  else
+    echo "[ERR] feishu-docx 和 Node uploader 都不可用；先跑 bash $SCRIPT_DIR/setup.sh" >&2
+    exit 1
+  fi
+fi
+
 # ─── 路由执行 ────────────────────────────────────────────────────────
 case "$ROUTE" in
   uploader)
-    [ ! -f "${UPLOADER_DIR}/upload.mjs" ] && {
-      echo "[ERR] uploader 未安装，跑 bash $SCRIPT_DIR/setup.sh" >&2
-      exit 1
-    }
     echo "[exec] node ${UPLOADER_DIR}/upload.mjs ${FILE} ${TITLE}"
     (cd "$UPLOADER_DIR" && node upload.mjs "$FILE" "$TITLE")
     ;;
   feishu-docx)
-    command -v feishu-docx >/dev/null 2>&1 || {
-      echo "[ERR] feishu-docx 未安装，跑 bash $SCRIPT_DIR/setup.sh" >&2
-      exit 1
-    }
     feishu-docx config set \
       --app-id "$FEISHU_APP_ID" \
       --app-secret "$FEISHU_APP_SECRET" \

@@ -19,11 +19,19 @@ UPLOADER_DIR="${FEISHU_SYNC_HOME}/uploader"
 
 mkdir -p "${FEISHU_SYNC_HOME}"
 
-# ─── 1. feishu-docx（pipx 首选，pip 兜底）─────────────────────────────
+# ─── 1. feishu-docx（pipx 首选，pip 兜底；Python<3.7 直接跳过）──────
 install_feishu_docx() {
   if command -v feishu-docx >/dev/null 2>&1; then
     echo "[skip] feishu-docx 已安装：$(command -v feishu-docx)"
     return 0
+  fi
+
+  # Python 版本预检：feishu-docx 要求 >=3.7
+  local PY_VER
+  PY_VER=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "0.0")
+  if [ "$(printf '%s\n3.7\n' "$PY_VER" | sort -V | head -1)" != "3.7" ]; then
+    echo "[SKIP] Python ${PY_VER} < 3.7，feishu-docx 不兼容；upload.sh 会自动走 Node uploader 路由" >&2
+    return 1
   fi
 
   if command -v pipx >/dev/null 2>&1; then
@@ -82,6 +90,18 @@ verify() {
   echo "  bash $(dirname "$(realpath "$0")")/probe.sh   # 自检"
 }
 
-install_feishu_docx
-install_uploader
+# feishu-docx 失败不致命——upload.sh 会自动降级到 uploader
+FEISHU_DOCX_OK=1
+install_feishu_docx || FEISHU_DOCX_OK=0
+
+UPLOADER_OK=1
+install_uploader || UPLOADER_OK=0
+
 verify
+
+# 至少一个路由得可用，否则硬失败
+if [ "$FEISHU_DOCX_OK" = "0" ] && [ "$UPLOADER_OK" = "0" ]; then
+  echo "" >&2
+  echo "[FAIL] feishu-docx 和 uploader 都未装成功，upload/download 无法工作" >&2
+  exit 1
+fi
