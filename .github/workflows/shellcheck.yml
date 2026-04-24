@@ -1,0 +1,48 @@
+name: shellcheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint bin/ scripts
+        run: shellcheck -S warning bin/*.sh
+
+      - name: Lint top-level scripts
+        run: shellcheck -S warning install.sh uninstall.sh
+
+      - name: Lint examples/
+        run: shellcheck -S warning examples/*.sh
+
+  smoke-test:
+    name: Smoke test (syntax + help)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n syntax check
+        run: |
+          for f in bin/*.sh install.sh uninstall.sh examples/*.sh; do
+            echo "::group::$f"
+            bash -n "$f" && echo "  [ok] syntax"
+            echo "::endgroup::"
+          done
+
+      - name: --help invocation
+        run: |
+          bash bin/download.sh --help || true
+          bash bin/upload.sh --help || true
+          bash install.sh --help || true
+          bash uninstall.sh --help || true
