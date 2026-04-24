@@ -33,10 +33,21 @@ done
 [ -z "$URL" ] && { echo "[MISSING] URL 必须提供" >&2; exit 2; }
 mkdir -p "$OUT_DIR"
 
-command -v feishu-docx >/dev/null 2>&1 || {
-  echo "[ERR] 未找到 feishu-docx，先跑 bash $(dirname "$SCRIPT_DIR")/install.sh 或 bash $SCRIPT_DIR/setup.sh" >&2
-  exit 1
-}
+has_feishu_docx() { command -v feishu-docx >/dev/null 2>&1; }
+
+# ─── feishu-docx 不可用时降级到纯 Python fallback ───────────────────
+if ! has_feishu_docx; then
+  LITE="${SCRIPT_DIR}/download-lite.py"
+  if [ -f "$LITE" ] && command -v python3 >/dev/null 2>&1; then
+    echo "[fallback] feishu-docx 不可用（Python<3.7 或未安装）→ 降级到纯 Python stdlib 下载（raw_content，保真度降低）" >&2
+    LITE_ARGS=("$URL" -o "$OUT_DIR")
+    [ "$RECURSIVE" -eq 1 ] && LITE_ARGS+=(--recursive)
+    exec python3 "$LITE" "${LITE_ARGS[@]}"
+  else
+    echo "[ERR] feishu-docx 不可用，且 python3 fallback 也不可用；先跑 bash $SCRIPT_DIR/setup.sh" >&2
+    exit 1
+  fi
+fi
 
 # 用 feishu-docx config 设置 app_id / app_secret（如果尚未配）
 # 这一步幂等
