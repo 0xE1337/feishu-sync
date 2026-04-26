@@ -91,6 +91,37 @@ token = auth.authenticate()
 
 **修法**：看响应里的 `msg` 字段，通常明确指出哪个参数有问题。
 
+## 90204 — sheets style/dimension 参数错误（msg 严重误导）
+
+**含义**：飞书 v2 sheets 样式/列宽 API 的参数验证不通过。
+
+**典型场景 1：`invalid fontSize, fontSize must between 9 and 36`**
+
+误读："9-36 范围内的整数"。**实测真理**：必须是字符串 `"<size>pt/<行高倍数>"` 格式（实测 2026-04-26）。
+
+```python
+# ❌ 飞书报 90204 must between 9 and 36
+{"font": {"fontSize": 11}}
+{"font": {"fontSize": "11pt"}}
+
+# ✅ 接受
+{"font": {"fontSize": "11pt/1.5"}}
+```
+
+**典型场景 2：`dimension length is nil`** （on `dimension_range` 端点）
+
+误读："长度计算为零"。**实测真理**：`dimension_range` 端点是 **`PUT`** 方法，不是 `POST`。POST 会走到一个**别的 handler** 报这个误导性错误。
+
+```bash
+# ❌ 报 dimension length is nil
+curl -X POST '.../dimension_range' -d '{"dimension": {...}, "dimensionProperties": {...}}'
+
+# ✅ 同样的 body
+curl -X PUT '.../dimension_range' -d '{...}'
+```
+
+**通用排查**：90204 永远是参数问题。msg 经常误导，需要逐字段对照 SDK 模型 + 试不同 HTTP 方法。
+
 ## 常见组合症状
 
 ### "搜不到应用"（别人无法添加你的应用到文档）
