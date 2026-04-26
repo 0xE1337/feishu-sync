@@ -2,7 +2,12 @@
 
 **飞书 ↔ Markdown 双向同步工具链**。下载飞书 docx/wiki 为 markdown（带 metadata 增量缓存），上传 markdown 到飞书（自动检测 LaTeX 公式并正确渲染），CSV/MD-table/TSV 直传飞书电子表格。
 
-面向 **AI agent + 团队**设计：portable、自装依赖、错误可操作、链接由任务传入不硬编码。可作为 Claude Code skill 使用，也可以独立 bash 调用。
+面向**所有使用飞书的人**：开发者、技术写作者、知识管理团队、AI agent 用户都能用。portable、自装依赖、错误可操作、链接由任务传入不硬编码。
+
+**三种用法**（任选）：
+1. **Claude Code skill** — `bash install.sh` 之后在 Claude Code 对话里自然语言触发
+2. **独立 bash CLI** — 直接 `bash bin/download.sh <url>` / `bash bin/upload.sh <md>`，不依赖任何 agent 框架
+3. **AI agent 框架的工具** — 作为 Multica / LangChain / 自建 runtime 的 tool 集成，agent 自 clone + 自装依赖
 
 ## 核心特性
 
@@ -18,10 +23,12 @@
 
 ## 适合谁
 
-- 把飞书知识库文档同步给 AI agent 做分析/审核
-- 团队成员需要把本地 md（论文、技术笔记）发布到飞书空间
-- CI / 自动化脚本需要和飞书云文档协作
-- 想把已有的"手工飞书 ops"沉淀成可复用工具链
+- **个人开发者 / 技术写作者** — 把本地 md（论文、技术笔记、博客草稿）发布到飞书空间，含 LaTeX 公式
+- **团队知识管理** — 把飞书 wiki/docx 批量同步到本地，做 AI 分析、审核、全文检索
+- **Claude Code 用户** — 装上后直接在 Claude 对话里说"把这篇 md 传到飞书"或"把这个 wiki 拉下来分析"
+- **AI agent 开发者** — 作为任意 agent 框架（Multica、LangChain、AutoGen、自建 runtime）的工具集成
+- **CI / 自动化脚本** — 定时拉取飞书云文档（带 metadata cache，省带宽），或自动发布周报/数据表
+- **数据分析师** — 把 CSV/TSV 一键传成飞书电子表格（带美化），团队直接在线协作筛选
 
 ## 快速开始
 
@@ -177,9 +184,15 @@ bash bin/upload-sheet.sh ./weekly.csv --update "https://my.feishu.cn/sheets/XYZ"
 
 详细 skill 入口：[SKILL.md](./SKILL.md)
 
-## 作为 Multica agent 的工具
+## 作为 AI agent 框架的工具
 
-把本 repo 作为 Multica agent 的 skill 之一。agent 启动时自 clone + 自装，用 tenant_access_token 直接读写飞书。详见 [docs/multica-integration.md](./docs/multica-integration.md)。
+本 repo 设计为**通用的 AI agent 飞书工具集**——任何能 `git clone` + 跑 bash 的 agent runtime 都能集成。agent 启动时自 clone + 自装依赖，用 tenant_access_token 直接读写飞书，无人工干预。
+
+**已知集成示例**：
+- [Multica](https://github.com/multica-ai/multica) — 详细接入指南见 [docs/multica-integration.md](./docs/multica-integration.md)（custom_env 配置 + 自装指令 + 任务协议）
+- **其他 agent 框架**（LangChain Tools、AutoGen Skills、自建 runtime 等）— 按 Multica 示例类比适配，核心是 3 件事：① 把 `FEISHU_APP_ID/SECRET` 注入运行环境 ② 在 agent 启动脚本里 `bash install.sh` ③ 把 `bin/*.sh` 暴露为 agent 可调用的命令
+
+如果你接入了新的 agent 框架，欢迎 PR 一份适配文档到 `docs/`。
 
 ## 目录结构
 
@@ -206,7 +219,7 @@ feishu-sync/
 │   ├── permission-model.md - 飞书 3 层权限模型
 │   ├── error-codes.md      - 错误码操作手册
 │   ├── auth-modes.md       - 鉴权模式选择（CDP / OAuth / Tenant）
-│   └── multica-integration.md - Multica agent 接入
+│   └── multica-integration.md - AI agent 接入示例（以 Multica 为例，可类比其他 runtime）
 │
 └── examples/               (可运行示例)
     ├── download-wiki-space.sh

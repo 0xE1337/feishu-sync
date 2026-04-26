@@ -1,6 +1,6 @@
 ---
 name: feishu-sync
-description: 双向同步 Markdown 与飞书文档。下载飞书 docx/wiki → md；上传 md → 飞书 docx（自动检测 LaTeX 公式，有公式走 uploader 渲染，无公式走 feishu-docx）；额外支持 CSV/MD-table/TSV → 飞书电子表格（Sheets，类 Excel 独立页面）。为 Multica agent 和团队设计，portable，首次调用自装依赖。
+description: 双向同步 Markdown 与飞书文档。下载飞书 docx/wiki → md（带 metadata 增量缓存）；上传 md → 飞书 docx（自动检测 LaTeX 公式，有公式走 uploader 渲染，无公式走 feishu-docx）；额外支持 CSV/MD-table/TSV → 飞书电子表格（Sheets，类 Excel 独立页面）。面向所有使用飞书的个人/团队/AI agent，portable，首次调用自装依赖，零硬编码业务信息。
 ---
 
 # feishu-sync
@@ -14,7 +14,7 @@ Markdown ↔ 飞书云文档的双向同步 skill。一条命令搞定上传/下
 - **要把单张表格作为独立飞书电子表格上传**（类 Excel 页面，可在线编辑/筛选/排序）→ `bin/upload-sheet.sh`
 - **遇到飞书 API 错误码搞不懂** → 查 `docs/error-codes.md`
 - **不知道该用 tenant 还是 oauth 鉴权** → 查 `docs/auth-modes.md`
-- **接入 Multica agent** → 查 `docs/multica-integration.md`
+- **接入 AI agent 框架**（Multica / LangChain / AutoGen / 自建 runtime） → 查 `docs/multica-integration.md`（以 Multica 为例，其他框架可类比）
 
 ## 前置：环境变量
 
