@@ -19,6 +19,9 @@ while [ $# -gt 0 ]; do
     --wiki)   WIKI_URL="$2"; shift 2 ;;
     --doc)    DOC_URL="$2"; shift 2 ;;
     --sheets) CHECK_SHEETS=1; shift ;;
+    -h|--help)
+      awk '/^[^#]/{exit} NR>1{sub(/^# ?/,""); print}' "$0"
+      exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
