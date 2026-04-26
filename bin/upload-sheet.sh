@@ -21,7 +21,14 @@
 #   冻结首行
 #   列宽自适应（CJK 字符按 2 算）
 #   --plain               一次跳过所有美化
+#   --no-header-style     只跳过表头样式（保留冻结+列宽）
+#   --no-freeze           只跳过冻结（保留样式+列宽）
+#   --no-autosize         只跳过列宽（保留样式+冻结）
 #   --header-bg "#RRGGBB" 自定义表头背景色
+#
+# 刷新已有表（不新建）：
+#   --update URL_OR_TOKEN 传 sheet URL 或 raw spreadsheet_token，
+#                         跳过 create + 自动跳过样式，数据从 A1 覆盖写入
 #
 # 数据保真：
 #   默认走 USER_ENTERED + 转义保护：

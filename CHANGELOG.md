@@ -16,13 +16,17 @@
   - `fontSize` 必须传字符串 `"11pt/1.5"` 格式，不是 int（飞书错误消息 `must between 9 and 36` 误导）
   - `dimension_range` API 必须用 **PUT** 而不是 POST（POST 会走错 handler 报误导性 `length is nil`）
   - 现在所有 styling 函数都校验 `code != 0` 并 raise，再被 main() 的 try/except wrap 成 warn 但不致命
+- **`--update <url_or_token>` 模式**：刷新已有 spreadsheet 的内容（不新建）。传 sheet URL 或 raw token，跳过 create + 跳过样式（假定已有表已经设置好），数据从 A1 覆盖写入。典型场景：每周报表数据刷新。
+- **颗粒度更细的样式 flag**：除了 `--plain` 一刀切，新增独立开关 `--no-header-style` / `--no-freeze` / `--no-autosize`，可任意组合。`--plain` 等价于同时给三个 `--no-X`。
+- **`bin/probe.sh --sheets`** — 主动验证 `sheets:spreadsheet` scope（创建临时表后立即删除）。配合 `drive:drive` 一起验。
+- **`.github/workflows/python-tests.yml`** — CI 跑 mock 测试套件（Python 3.10/3.12 矩阵），保护未来不出现 silent-fail 回归。
 - **HTTP 层鲁棒性**：
   - 5xx + 429 自动重试（指数退避：500ms → 1500ms → ...，默认最多 3 次尝试）
   - 网络错误（DNS / 连接超时）也走重试
   - 4xx 业务错误立即失败不浪费时间
   - 错误消息附带修复建议，指向 `docs/error-codes.md` 具体段落（已知 code：99991672/131006/131005/1254040/20027/20029）
   - User-Agent 标识 `feishu-sync/0.2 (upload-sheet)`
-- `bin/test-upload-sheet.py` — mock 飞书 API 的端到端测试套件，57 个断言（数据路径 + 美化路径 + literal 模式 + 错误透传 + retry/error-format）
+- `bin/test-upload-sheet.py` — mock 飞书 API 的端到端测试套件，76 个断言（数据路径 + 美化路径 + literal 模式 + 错误透传 + retry/error-format + --update + 颗粒度 flag + URL parser）
 - `.github/workflows/shellcheck.yml` — CI 里对 bash 脚本跑 shellcheck + `bash -n` 语法检查
 - `examples/upload-sheet.sh` — 端到端示例：生成样本 CSV → dry-run → 真实上传
 - `examples/upload-sheet-literal.sh` — 默认模式 vs `--literal` 模式对比演示（航班号/前导零 ID/公式样字符串场景）

@@ -126,11 +126,19 @@ bash bin/upload-sheet.sh ./data.csv --dry-run
 # 关闭所有美化，只写数据
 bash bin/upload-sheet.sh ./data.csv --plain
 
+# 颗粒度更细的样式开关（任意组合）
+bash bin/upload-sheet.sh ./data.csv --no-freeze        # 不冻结首行
+bash bin/upload-sheet.sh ./data.csv --no-autosize      # 不调列宽
+bash bin/upload-sheet.sh ./data.csv --no-header-style  # 不加粗表头
+
 # 自定义表头底色（默认浅蓝 #E8F0FE）
 bash bin/upload-sheet.sh ./data.csv --header-bg "#FFE5E5"
 
 # RAW 模式：保留前导零、不识别科学计数法、= 不当公式
 bash bin/upload-sheet.sh ./flight-numbers.csv --literal
+
+# 刷新已有 spreadsheet 内容（不新建，传 URL 或 raw token）
+bash bin/upload-sheet.sh ./weekly.csv --update "https://my.feishu.cn/sheets/XYZ"
 ```
 
 成功后会输出 `[DONE] https://xxx.feishu.cn/sheets/<token>`。

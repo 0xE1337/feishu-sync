@@ -339,6 +339,35 @@ def build_range(sheet_id: str, n_rows: int, n_cols: int) -> str:
 
 # ─── 飞书 Sheets API 封装 ──────────────────────────────────────────────
 
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9]{20,}$")
+
+
+def parse_spreadsheet_token(url_or_token: str) -> str:
+    """从 sheet URL 或 raw token 抽出 spreadsheet_token。
+
+    支持的输入：
+      https://my.feishu.cn/sheets/XYZabc123
+      https://xxx.feishu.cn/sheets/XYZabc123?from=open_search
+      https://open.larksuite.com/sheets/XYZabc123#anchor
+      XYZabc123                    （raw token，27 字符通常）
+    """
+    s = url_or_token.strip()
+    if "/sheets/" in s:
+        # 取 /sheets/ 后面到下一个 ? # / 之前
+        after = s.split("/sheets/", 1)[1]
+        for stop in ("?", "#", "/"):
+            idx = after.find(stop)
+            if idx >= 0:
+                after = after[:idx]
+        s = after
+    if not _TOKEN_RE.fullmatch(s):
+        raise ValueError(
+            f"无法从 {url_or_token!r} 解析出 spreadsheet_token；"
+            f"期望形如 'https://xxx.feishu.cn/sheets/<token>' 或 raw token"
+        )
+    return s
+
+
 def create_spreadsheet(token: str, title: str, folder_token: str | None) -> dict:
     body: dict = {"title": title}
     if folder_token:
@@ -557,11 +586,39 @@ def main() -> int:
         help="跳过所有美化（不加表头样式、不冻结首行、不调列宽），只写数据",
     )
     p.add_argument(
+        "--no-header-style",
+        action="store_true",
+        help="只跳过表头样式（保留冻结+列宽）",
+    )
+    p.add_argument(
+        "--no-freeze",
+        action="store_true",
+        help="只跳过冻结首行（保留表头样式+列宽）",
+    )
+    p.add_argument(
+        "--no-autosize",
+        action="store_true",
+        help="只跳过列宽自适应（保留表头样式+冻结）",
+    )
+    p.add_argument(
         "--header-bg",
         default=DEFAULT_HEADER_BG,
         help=f"表头背景色（默认 {DEFAULT_HEADER_BG}），形如 #RRGGBB",
     )
+    p.add_argument(
+        "--update",
+        metavar="URL_OR_TOKEN",
+        help="刷新已有 spreadsheet：传 sheet URL 或 spreadsheet_token，"
+             "跳过 create + 跳过样式（假定已有表已经设置好），"
+             "数据从 A1 覆盖写入。注意：这会替换该 sheet 现有内容",
+    )
     args = p.parse_args()
+
+    # --plain 是 umbrella，等价于同时给 --no-header-style --no-freeze --no-autosize
+    if args.plain:
+        args.no_header_style = True
+        args.no_freeze = True
+        args.no_autosize = True
 
     file_path = Path(args.file)
     if not file_path.is_file():
@@ -618,13 +675,20 @@ def main() -> int:
     token = get_tenant_token(app_id, app_secret)
     print(f"[auth] tenant_access_token 获取成功（长度={len(token)}）", file=sys.stderr)
 
-    sheet_meta = create_spreadsheet(token, title, args.folder)
-    spreadsheet_token = sheet_meta["spreadsheet_token"]
-    sheet_url = sheet_meta.get("url", "")
-    print(
-        f"[create] spreadsheet_token={spreadsheet_token}",
-        file=sys.stderr,
-    )
+    if args.update:
+        # 刷新已有 spreadsheet：跳过 create + 默认跳过样式
+        spreadsheet_token = parse_spreadsheet_token(args.update)
+        sheet_url = f"https://{FEISHU_HOST.replace('open.', 'my.')}/sheets/{spreadsheet_token}"
+        print(f"[update] spreadsheet_token={spreadsheet_token}（跳过 create）", file=sys.stderr)
+        # --update 隐含 --plain：假定已有表已经设置好样式
+        args.no_header_style = True
+        args.no_freeze = True
+        args.no_autosize = True
+    else:
+        sheet_meta = create_spreadsheet(token, title, args.folder)
+        spreadsheet_token = sheet_meta["spreadsheet_token"]
+        sheet_url = sheet_meta.get("url", "")
+        print(f"[create] spreadsheet_token={spreadsheet_token}", file=sys.stderr)
 
     sheet_id = query_default_sheet_id(token, spreadsheet_token)
     print(f"[query] default sheet_id={sheet_id}", file=sys.stderr)
@@ -637,30 +701,32 @@ def main() -> int:
         file=sys.stderr,
     )
 
-    # 美化：默认开启，--plain 跳过
-    if not args.plain and n_rows >= 1 and n_cols >= 1:
-        try:
-            apply_header_style(token, spreadsheet_token, sheet_id, n_cols, bg=args.header_bg)
-            print(f"[style] 表头样式已应用（{n_cols} 列加粗+背景色）", file=sys.stderr)
-        except Exception as e:
-            print(f"[warn] 表头样式失败（继续）：{e}", file=sys.stderr)
+    # 美化：每个 --no-X flag 独立控制（--plain 是 umbrella，会一次置 3 个 True）
+    if n_rows >= 1 and n_cols >= 1:
+        if not args.no_header_style:
+            try:
+                apply_header_style(token, spreadsheet_token, sheet_id, n_cols, bg=args.header_bg)
+                print(f"[style] 表头样式已应用（{n_cols} 列加粗+背景色）", file=sys.stderr)
+            except Exception as e:
+                print(f"[warn] 表头样式失败（继续）：{e}", file=sys.stderr)
 
-        if n_rows >= 2:
+        if not args.no_freeze and n_rows >= 2:
             try:
                 freeze_rows(token, spreadsheet_token, sheet_id, count=1)
                 print("[style] 首行已冻结", file=sys.stderr)
             except Exception as e:
                 print(f"[warn] 冻结首行失败（继续）：{e}", file=sys.stderr)
 
-        try:
-            widths = compute_column_widths(rows)
-            set_column_widths(token, spreadsheet_token, sheet_id, widths)
-            print(
-                f"[style] 列宽已自适应（{len(widths)} 列，宽度 min={min(widths)} max={max(widths)}）",
-                file=sys.stderr,
-            )
-        except Exception as e:
-            print(f"[warn] 列宽设置失败（继续）：{e}", file=sys.stderr)
+        if not args.no_autosize:
+            try:
+                widths = compute_column_widths(rows)
+                set_column_widths(token, spreadsheet_token, sheet_id, widths)
+                print(
+                    f"[style] 列宽已自适应（{len(widths)} 列，宽度 min={min(widths)} max={max(widths)}）",
+                    file=sys.stderr,
+                )
+            except Exception as e:
+                print(f"[warn] 列宽设置失败（继续）：{e}", file=sys.stderr)
 
     print(f"[DONE] {sheet_url}")
     return 0

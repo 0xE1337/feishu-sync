@@ -133,6 +133,8 @@ def run_main(
     fmt: str,
     plain: bool = True,  # 默认跳过美化，让既有测试只关注数据路径（4 次 API 调用）
     literal: bool = False,
+    update: str | None = None,
+    extra_args: list[str] | None = None,
 ) -> tuple[int, str, str]:
     """跑 us.main()，捕获 stdout/stderr，返回 (exit_code, stdout, stderr)。
     复刻 entry-point 的 try/except 行为：未捕获异常 → exit 1 + 错误打到 stderr。
@@ -144,6 +146,10 @@ def run_main(
         argv.append("--plain")
     if literal:
         argv.append("--literal")
+    if update:
+        argv += ["--update", update]
+    if extra_args:
+        argv += extra_args
     old_argv = sys.argv
     sys.argv = argv
     out, err = io.StringIO(), io.StringIO()
@@ -541,6 +547,101 @@ def case_retry_on_5xx() -> None:
     check("修复建议" not in msg, "未知 code 不强加 hint", f"got {msg!r}")
 
 
+def case_update_existing_sheet() -> None:
+    """--update <url>：跳过 create_spreadsheet + 跳过样式 + 数据从 A1 覆盖。"""
+    print("\n── case 9: --update 刷新已有 sheet ──")
+    fake = FakeFeishu()
+    us._http_json = fake  # type: ignore[attr-defined]
+
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as f:
+        f.write("a,b,c\n1,2,3\n4,5,6\n")
+        path = Path(f.name)
+    try:
+        existing_url = f"https://my.feishu.cn/sheets/{fake.fake_ss_token}"
+        code, stdout, stderr = run_main(
+            path, title="刷新", folder=None, fmt="auto",
+            plain=False,  # 即便用户没传 --plain，--update 也应该自动跳过样式
+            update=existing_url,
+        )
+    finally:
+        path.unlink()
+
+    check(code == 0, "exit code = 0", f"stderr={stderr.strip()[-200:]}")
+
+    methods_paths = [(m, p) for (m, p, _) in fake.calls]
+    create_calls = [p for (m, p) in methods_paths if p == "/open-apis/sheets/v3/spreadsheets" and m == "POST"]
+    style_calls = [p for (m, p) in methods_paths if p.endswith("/style")]
+    freeze_calls = [p for (m, p) in methods_paths if p.endswith("/sheets_batch_update")]
+    dim_calls = [p for (m, p) in methods_paths if p.endswith("/dimension_range")]
+
+    check(len(create_calls) == 0, "--update 不调用 create_spreadsheet", f"got {create_calls}")
+    check(len(style_calls) == 0, "--update 跳过样式 PUT /style", f"got {style_calls}")
+    check(len(freeze_calls) == 0, "--update 跳过 freeze", f"got {freeze_calls}")
+    check(len(dim_calls) == 0, "--update 跳过 dimension_range", f"got {dim_calls}")
+
+    write_call = next(b for (m, p, b) in fake.calls if p.endswith("/values_batch_update"))
+    rng = (write_call.get("valueRanges") or [{}])[0].get("range", "")
+    check(rng.endswith("!A1:C3"), f"数据从 A1 写入到 C3", f"got {rng}")
+    check(f"https://my.feishu.cn/sheets/{fake.fake_ss_token}" in stdout,
+          "stdout 含正确 sheet URL", f"stdout={stdout.strip()}")
+
+
+def case_granular_style_flags() -> None:
+    """单独 --no-freeze 时，仍应该执行 header style + autosize。"""
+    print("\n── case 10: --no-freeze 颗粒度（保留 header + autosize）──")
+    fake = FakeFeishu()
+    us._http_json = fake  # type: ignore[attr-defined]
+
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as f:
+        f.write("a,b\n1,2\n3,4\n")
+        path = Path(f.name)
+    try:
+        code, stdout, stderr = run_main(
+            path, title="t", folder=None, fmt="auto",
+            plain=False, extra_args=["--no-freeze"],
+        )
+    finally:
+        path.unlink()
+
+    check(code == 0, "exit code = 0", f"stderr={stderr.strip()[-200:]}")
+    methods_paths = [(m, p) for (m, p, _) in fake.calls]
+    style_calls = [p for (m, p) in methods_paths if p.endswith("/style")]
+    freeze_calls = [p for (m, p) in methods_paths if p.endswith("/sheets_batch_update")]
+    dim_calls = [p for (m, p) in methods_paths if p.endswith("/dimension_range")]
+    check(len(style_calls) == 1, "--no-freeze 仍应用 header style", f"got {style_calls}")
+    check(len(freeze_calls) == 0, "--no-freeze 跳过 freeze", f"got {freeze_calls}")
+    check(len(dim_calls) >= 1, "--no-freeze 仍应用 autosize", f"got {dim_calls}")
+
+
+def case_url_parser() -> None:
+    """parse_spreadsheet_token 各种 URL/token 输入。"""
+    print("\n── case 11: parse_spreadsheet_token 单元测试 ──")
+    happy_cases = [
+        ("https://my.feishu.cn/sheets/XYZabc123def456ghi789", "XYZabc123def456ghi789"),
+        ("https://xxx.feishu.cn/sheets/XYZabc123def456ghi789?from=x", "XYZabc123def456ghi789"),
+        ("https://open.larksuite.com/sheets/XYZabc123def456ghi789#a", "XYZabc123def456ghi789"),
+        ("XYZabc123def456ghi789", "XYZabc123def456ghi789"),
+    ]
+    for inp, expected in happy_cases:
+        try:
+            got = us.parse_spreadsheet_token(inp)
+            check(got == expected, f"happy: {inp[:50]}...", f"got {got!r} expected {expected!r}")
+        except Exception as e:
+            check(False, f"happy: {inp[:50]}...", f"unexpected raise: {e}")
+    bad_cases = [
+        "https://x.com/sheets/short",  # token 太短
+        "no-sheets-here",
+        "",
+        "a/b",
+    ]
+    for bad in bad_cases:
+        try:
+            us.parse_spreadsheet_token(bad)
+            check(False, f"bad: {bad!r} 应 raise", "没 raise")
+        except ValueError:
+            check(True, f"bad: {bad!r} 正确 raise ValueError", "")
+
+
 def main() -> int:
     print("=" * 60)
     print("upload-sheet.py 端到端集成测试（mock 飞书 API）")
@@ -553,6 +654,9 @@ def main() -> int:
     case_literal_mode()
     case_default_mode_protections()
     case_retry_on_5xx()
+    case_update_existing_sheet()
+    case_granular_style_flags()
+    case_url_parser()
 
     total = len(results)
     passed = sum(1 for ok, _ in results if ok)

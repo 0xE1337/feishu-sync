@@ -43,13 +43,18 @@ bash bin/setup.sh
 ## 自检
 
 ```bash
-bash bin/probe.sh
+bash bin/probe.sh                         # 凭证 + token
+bash bin/probe.sh --wiki <url>            # 加验 wiki 可达
+bash bin/probe.sh --doc <url>             # 加验 docx 可读
+bash bin/probe.sh --sheets                # 加验 sheets:spreadsheet scope（创建+删除临时表）
 ```
 
-验 3 件事：
+验 3-5 件事（按 flag）：
 1. 凭证环境变量齐全
 2. `tenant_access_token` 能取
 3. 如果给了 `--wiki <url>`，验证 wiki 可达
+4. 如果给了 `--doc <url>`，验证 docx 正文可读
+5. 如果给了 `--sheets`，验证创建/删除 spreadsheet（顺带验 `drive:drive`）
 
 ## 主命令：下载
 
@@ -102,12 +107,20 @@ bash bin/upload-sheet.sh ./data.csv --dry-run
 # 关闭所有美化，只写数据（适合后续要程序化读 + 不在意展示）
 bash bin/upload-sheet.sh ./data.csv --plain
 
+# 颗粒度更细：单独关某一项（其它默认仍开）
+bash bin/upload-sheet.sh ./data.csv --no-freeze       # 加粗+列宽，不冻结
+bash bin/upload-sheet.sh ./data.csv --no-autosize     # 加粗+冻结，不动列宽
+bash bin/upload-sheet.sh ./data.csv --no-header-style # 冻结+列宽，不加粗
+
 # 自定义表头底色（默认 #E8F0FE 浅蓝；想要暖色用 #FFE5E5 等）
 bash bin/upload-sheet.sh ./data.csv --header-bg "#FFE5E5"
 
 # RAW 模式：保留代码片段、保留前导零（航班号/邮编/ID），公式 = 不被执行
 # 默认（USER_ENTERED 模式）会自动给 = 开头加 ' 防注入；literal 不需要
 bash bin/upload-sheet.sh ./flight-numbers.csv --literal
+
+# 刷新已有 spreadsheet 内容（不新建）：传 URL 或 raw token，自动跳过 create + 样式
+bash bin/upload-sheet.sh ./weekly.csv --update "https://my.feishu.cn/sheets/XYZ"
 ```
 
 成功后输出 `[DONE] https://xxx.feishu.cn/sheets/<token>` ——直接打开就能看到 Excel 风格页面。
