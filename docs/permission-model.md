@@ -11,6 +11,8 @@
 - `docx:document:readonly` — 读 docx 正文
 - `docx:document` — 写 docx 正文（创建/更新）
 - `drive:drive` — 云盘文件管理（用于 create 到指定 folder）
+- `sheets:spreadsheet` — 创建/读/写电子表格（`upload-sheet.sh` 必需）
+- `sheets:spreadsheet:create` — 仅创建空电子表格（颗粒度更细的最小集，配合 `drive:drive` 用）
 
 **没过这层**：`code: 99991672 insufficient scope`
 
@@ -45,6 +47,9 @@
 | `wiki/v2/spaces` 列应用可访问的所有 space | ⚠️ 返回空 | - | 第 3 层 |
 | `wiki/v2/spaces/{id}` 读 space 元信息 | ❌ | `131006` | 第 3 层 |
 | `POST wiki/v2/spaces/{id}/nodes` 创建节点 | ❌ | `131006` tenant needs edit | 第 3 层 + edit role |
+| `POST sheets/v3/spreadsheets` 创建电子表格 | ✅ | - | 1 (`sheets:spreadsheet` 或 `sheets:spreadsheet:create`)；指定 `folder_token` 还要 `drive:drive` |
+| `GET sheets/v3/spreadsheets/{tok}/sheets/query` | ✅ | - | 1 (同上) |
+| `POST sheets/v2/spreadsheets/{tok}/values_batch_update` 写值 | ✅ | - | 1 (`sheets:spreadsheet`) |
 
 ## 排查决策树（遇到 code:131006 时）
 

@@ -9,6 +9,7 @@
 **典型触发**：
 - 调 `wiki/...` 但应用没申请 `wiki:wiki` / `wiki:wiki:readonly`
 - 调 `docx/...` 但应用没申请 `docx:document:readonly` / `docx:document`
+- 调 `sheets/v3/spreadsheets`（创建电子表格）或 `sheets/v2/.../values_batch_update`（写值）但没申请 `sheets:spreadsheet`（或 `sheets:spreadsheet:create` + `drive:drive`）
 
 **修法**（自助可做）：
 1. 开放平台 → 应用 → 权限管理

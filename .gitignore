@@ -19,6 +19,11 @@ node_modules/
 *.swp
 *~
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # 测试临时文件
 /tmp/
 *.tmp

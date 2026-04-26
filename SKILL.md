@@ -1,6 +1,6 @@
 ---
 name: feishu-sync
-description: 双向同步 Markdown 与飞书文档。下载飞书 docx/wiki → md；上传 md → 飞书（自动检测 LaTeX 公式，有公式走 uploader 渲染，无公式走 feishu-docx）。为 Multica agent 和团队设计，portable，首次调用自装依赖。
+description: 双向同步 Markdown 与飞书文档。下载飞书 docx/wiki → md；上传 md → 飞书 docx（自动检测 LaTeX 公式，有公式走 uploader 渲染，无公式走 feishu-docx）；额外支持 CSV/MD-table/TSV → 飞书电子表格（Sheets，类 Excel 独立页面）。为 Multica agent 和团队设计，portable，首次调用自装依赖。
 ---
 
 # feishu-sync
@@ -11,6 +11,7 @@ Markdown ↔ 飞书云文档的双向同步 skill。一条命令搞定上传/下
 
 - **要从飞书拉 docx 或 wiki 空间** → `bin/download.sh`
 - **要把 md 上传到飞书**（含公式也能正确渲染）→ `bin/upload.sh`
+- **要把单张表格作为独立飞书电子表格上传**（类 Excel 页面，可在线编辑/筛选/排序）→ `bin/upload-sheet.sh`
 - **遇到飞书 API 错误码搞不懂** → 查 `docs/error-codes.md`
 - **不知道该用 tenant 还是 oauth 鉴权** → 查 `docs/auth-modes.md`
 - **接入 Multica agent** → 查 `docs/multica-integration.md`
@@ -26,7 +27,8 @@ export FEISHU_APP_SECRET="xxxxxxxxxxxxxxxxxxxxxxxx"
 
 **应用身份权限必需 scope**（应用管理员在开放平台开通并发版）：
 - 读：`wiki:wiki:readonly` + `docx:document:readonly`
-- 写：`docx:document` + `drive:drive`
+- 写 docx：`docx:document` + `drive:drive`
+- 写 spreadsheet：`sheets:spreadsheet`（含创建+读写）；指定 `--folder` 还需 `drive:drive`
 
 ## 首次使用：装依赖
 
@@ -78,13 +80,42 @@ bash bin/upload.sh ./x.md --force-latex
 bash bin/upload.sh ./x.md --folder fldcn_xxxx
 ```
 
+## 主命令：上传单张表格为飞书电子表格
+
+```bash
+# CSV → 独立飞书 spreadsheet（类 Excel 页面）
+bash bin/upload-sheet.sh ./data.csv --title "Q1 销售"
+
+# 从一份 markdown 里抓第一张 GFM 表格上传（忽略其他段落）
+bash bin/upload-sheet.sh ./report.md --title "演示" --folder fldcn_xxx
+
+# 制表符分隔
+bash bin/upload-sheet.sh ./data.tsv --title "原始日志"
+
+# 不知道扩展名时显式指定格式
+bash bin/upload-sheet.sh ./data.txt --format csv --title "无后缀"
+
+# 只解析+打印请求体，不真发请求（联调用）
+bash bin/upload-sheet.sh ./data.csv --dry-run
+```
+
+成功后输出 `[DONE] https://xxx.feishu.cn/sheets/<token>` ——直接打开就能看到 Excel 风格页面。
+
 ## 决策树（agent 遇到"该用哪个"时看这里）
 
 ```
-任务是要把 md 放到飞书？
-├── md 里有 $...$ 或 $$...$$ 或 \\frac \\sum 之类的 LaTeX 符号？
-│   ├── 是 → bin/upload.sh（自动路由到 uploader，公式会渲染）
-│   └── 否 → bin/upload.sh（自动路由到 feishu-docx create）
+任务要在飞书产出什么？
+├── 一份图文/段落/带公式的文档？
+│   └── bin/upload.sh ./x.md --title "..."
+│       ├── md 里有 $...$ / $$...$$ / \\frac / \\sum 等 LaTeX 符号
+│       │   → 自动走 uploader（公式渲染为 equation 块）
+│       └── 否 → 自动走 feishu-docx create（最简）
+│
+├── 一张可在线编辑/筛选/排序的表格（类 Excel）？
+│   └── bin/upload-sheet.sh ./data.{csv,tsv,md} --title "..."
+│       ├── .csv → 逗号分隔
+│       ├── .tsv → 制表符分隔
+│       └── .md  → 抓文件中第一张 GFM 表格
 │
 任务是要从飞书拿内容？
 ├── URL 是 /docx/<token>？
@@ -107,7 +138,7 @@ agent 遇到 code 非 0 时，第一步到 `docs/error-codes.md` 查对应修法
 
 | 错误码 | 含义 | 修法 |
 |-------|------|------|
-| `99991672` | 应用身份 scope 不足 | 回开放平台加 scope 并发版 |
+| `99991672` | 应用身份 scope 不足 | 回开放平台加 scope 并发版（写 sheet 需 `sheets:spreadsheet`） |
 | `131006` | 非成员或 wiki 不公开 | 读场景：加应用到 wiki 成员（只读）；写场景：加 edit 权限 |
 | `20027` | OAuth scope 不足 | 换 `OAuth2Authenticator(scopes=[...])` 只请最小集 |
 | `20029` | redirect_uri 不匹配 | 开放平台 → 安全设置加 `http://127.0.0.1:9527/`（带结尾斜杠） |

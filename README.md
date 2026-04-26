@@ -11,6 +11,7 @@
   - 下载走 [feishu-docx](https://github.com/JessonChan/feishu-docx)
   - 上传有公式走 [feishu-markdown-uploader](https://github.com/0xE1337/feishu-markdown-uploader)（LaTeX → equation 块）
   - 上传无公式走 feishu-docx（最简路径）
+- **表格独立通道**：CSV/MD-table/TSV → 飞书电子表格（Sheets，类 Excel 独立页面），纯 stdlib，零额外依赖
 - **agent-friendly**：首次调用自装依赖，失败有明确错误码和修法
 - **portable**：零硬编码业务信息，一套脚本跑任何飞书/Lark 租户
 - **open knowledge**：[权限模型](docs/permission-model.md) / [错误码手册](docs/error-codes.md) / [鉴权模式选择](docs/auth-modes.md) 都是实测归纳
@@ -29,8 +30,9 @@
 1. **飞书自建应用**：[https://open.feishu.cn/app](https://open.feishu.cn/app) 创建，拿到 `APP_ID` + `APP_SECRET`
 2. **应用身份权限**（应用管理员在开放平台开通并发版）：
    - 读：`wiki:wiki:readonly` + `docx:document:readonly`
-   - 写：`docx:document` + `drive:drive`
-3. **运行环境**：Python 3.8+、Node.js 18+、git、bash（macOS / Linux）
+   - 写 docx：`docx:document` + `drive:drive`
+   - 写 spreadsheet：`sheets:spreadsheet`（含创建+读写）；指定 `--folder` 还需 `drive:drive`
+3. **运行环境**：Python 3.8+、Node.js 18+、git、bash（macOS / Linux）。`upload-sheet.sh` 仅依赖 python3 stdlib，无需安装 feishu-docx / uploader。
 
 ### 安装
 
@@ -98,6 +100,33 @@ bash bin/upload.sh ./x.md --force-latex
 bash bin/upload.sh ./x.md --folder fldcn_xxxx
 ```
 
+### 上传单张表格 → 飞书电子表格（Sheets）
+
+> 区别：上面的 `upload.sh` 把 markdown 整体当 docx 文档传，里面的表格是 markdown 表格块；
+> 下面的 `upload-sheet.sh` 把单张表格作为**独立电子表格**上传，得到一个类 Excel 的飞书页面，可在线筛选/排序/编辑公式。
+
+```bash
+# CSV → 独立飞书 spreadsheet
+bash bin/upload-sheet.sh ./data.csv --title "Q1 销售"
+
+# 从一份 markdown 抓第一张 GFM 表格（自动忽略其他段落/标题）
+bash bin/upload-sheet.sh ./report.md --title "演示"
+
+# TSV / 强制格式
+bash bin/upload-sheet.sh ./data.tsv --title "原始日志"
+bash bin/upload-sheet.sh ./data.txt --format csv --title "无后缀"
+
+# 指定飞书目录
+bash bin/upload-sheet.sh ./data.csv --title "Q1 销售" --folder fldcn_xxxx
+
+# Dry-run：只解析 + 打印请求骨架，不真发请求
+bash bin/upload-sheet.sh ./data.csv --dry-run
+```
+
+成功后会输出 `[DONE] https://xxx.feishu.cn/sheets/<token>`。
+
+**约束**（飞书侧）：单次最多 5000 行 × 100 列；单元格 ≤ 40000 字符。超出会在调用前 fail-fast。
+
 ## 作为 Claude Code skill 使用
 
 `install.sh` 之后，skill `feishu-sync` 立即可用。在 Claude Code 对话里自然语言调用，skill 会引导选择 download/upload 和相应参数。
@@ -123,7 +152,9 @@ feishu-sync/
 │   ├── probe.sh            - 自检
 │   ├── token.sh            - 取 tenant_access_token
 │   ├── download.sh         - 下载路由
-│   └── upload.sh           - 上传路由（含 LaTeX 检测）
+│   ├── upload.sh           - 上传路由（含 LaTeX 检测）
+│   ├── upload-sheet.sh     - 单张表格 → 飞书电子表格（thin wrapper）
+│   └── upload-sheet.py     - upload-sheet 实现（纯 stdlib，CSV/TSV/MD-table 解析 + Sheets API）
 │
 ├── docs/                   (实测归纳的知识)
 │   ├── permission-model.md - 飞书 3 层权限模型

@@ -5,7 +5,20 @@
 ## [Unreleased]
 
 ### Added
+- **`bin/upload-sheet.sh` + `bin/upload-sheet.py`** — 把单张表格（CSV / TSV / Markdown GFM 表格）作为**独立飞书电子表格（Sheets）**上传，得到一个类 Excel 的飞书页面。区别于 `upload.sh`（markdown → docx 内表格块）。纯 Python stdlib，零额外依赖；走 `sheets/v3` (创建/查 sheet) + `sheets/v2/values_batch_update` (写值) API。支持 `--title` / `--folder` / `--format` / `--dry-run`，自动数字类型识别（`USER_ENTERED`），fail-fast 校验飞书侧 5000×100 / 40000-char 上限。
+- **美观度增强（默认开启）**：上传后自动应用 ① 表头加粗 + 浅蓝底 (`#E8F0FE`) + 居中 ② 冻结首行 ③ 列宽自适应（CJK 字符按 2 算，连续同宽列合并成单次 API 调用）。三个可关闭：`--plain` 一次跳过所有美化。`--header-bg "#FFE5E5"` 自定义表头色。
+- **`--literal` flag**：切到 RAW 上传模式，所有单元格当字符串原样保留（不做数字识别、不做公式 `=` 转义）。适合上传代码片段、保留前导零的 ID（航班号/邮编）。
+- **3 个数据保真 bug 修复**：
+  - 前导零保护：`007` 不再被吞成 `int 7`，保留为 `str "007"`
+  - 科学计数法识别：`1.23e10` 现在识别为 `float`（之前 regex 不匹配 `e`）
+  - 公式注入防护：`=SUM(B2:B4)` 字符串自动加 `'` 前缀，防止飞书 USER_ENTERED 模式把它当公式执行（同样的 `+`/`-`/`@` 开头处理）
+- `bin/test-upload-sheet.py` — mock 飞书 API 的端到端测试套件，47 个断言（数据路径 + 美化路径 + literal 模式 + 错误透传）
 - `.github/workflows/shellcheck.yml` — CI 里对 bash 脚本跑 shellcheck + `bash -n` 语法检查
+- `examples/upload-sheet.sh` — 端到端示例：生成样本 CSV → dry-run → 真实上传
+
+### Docs
+- `SKILL.md` 决策树新增"产出 docx vs 产出 sheet"分支；`README.md` 加上传 sheet 命令段
+- `docs/error-codes.md` 加 `sheets:spreadsheet` scope 说明，`docs/permission-model.md` 补 sheets API 端点 ↔ 权限层映射
 
 ## [0.1.0] - 2026-04-24
 
