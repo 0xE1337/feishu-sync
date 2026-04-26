@@ -107,6 +107,7 @@ bash bin/upload.sh ./x.md --folder fldcn_xxxx
 
 ```bash
 # CSV → 独立飞书 spreadsheet
+# 默认开启美化：表头加粗 + 浅蓝底 (#E8F0FE) + 居中 / 冻结首行 / 列宽自适应
 bash bin/upload-sheet.sh ./data.csv --title "Q1 销售"
 
 # 从一份 markdown 抓第一张 GFM 表格（自动忽略其他段落/标题）
@@ -121,9 +122,22 @@ bash bin/upload-sheet.sh ./data.csv --title "Q1 销售" --folder fldcn_xxxx
 
 # Dry-run：只解析 + 打印请求骨架，不真发请求
 bash bin/upload-sheet.sh ./data.csv --dry-run
+
+# 关闭所有美化，只写数据
+bash bin/upload-sheet.sh ./data.csv --plain
+
+# 自定义表头底色（默认浅蓝 #E8F0FE）
+bash bin/upload-sheet.sh ./data.csv --header-bg "#FFE5E5"
+
+# RAW 模式：保留前导零、不识别科学计数法、= 不当公式
+bash bin/upload-sheet.sh ./flight-numbers.csv --literal
 ```
 
 成功后会输出 `[DONE] https://xxx.feishu.cn/sheets/<token>`。
+
+**数据保真**（已在真飞书 API 验证过）：
+- 默认 `USER_ENTERED` 模式：纯数字识别为 int/float（含科学计数法 `1.23e10`），布尔由飞书自动识别，前导零 `007` 保留为字符串，`=SUM(...)` 等公式样字符串自动加 `'` 前缀防注入
+- `--literal` `RAW` 模式：所有内容当字符串，适合上传代码片段、ID、保留特定数据格式
 
 **约束**（飞书侧）：单次最多 5000 行 × 100 列；单元格 ≤ 40000 字符。超出会在调用前 fail-fast。
 
@@ -154,7 +168,8 @@ feishu-sync/
 │   ├── download.sh         - 下载路由
 │   ├── upload.sh           - 上传路由（含 LaTeX 检测）
 │   ├── upload-sheet.sh     - 单张表格 → 飞书电子表格（thin wrapper）
-│   └── upload-sheet.py     - upload-sheet 实现（纯 stdlib，CSV/TSV/MD-table 解析 + Sheets API）
+│   ├── upload-sheet.py     - upload-sheet 实现（纯 stdlib，CSV/TSV/MD-table 解析 + 美化 + Sheets API）
+│   └── test-upload-sheet.py - upload-sheet 的 mock 集成测试（47 断言）
 │
 ├── docs/                   (实测归纳的知识)
 │   ├── permission-model.md - 飞书 3 层权限模型
@@ -164,7 +179,9 @@ feishu-sync/
 │
 └── examples/               (可运行示例)
     ├── download-wiki-space.sh
-    └── upload-with-latex.sh
+    ├── upload-with-latex.sh
+    ├── upload-sheet.sh             - 端到端：CSV → 飞书 spreadsheet
+    └── upload-sheet-literal.sh     - 默认 vs --literal 模式对比演示
 ```
 
 ## 设计原则

@@ -54,6 +54,28 @@ MAX_CELL_CHARS = 40000
 
 # ─── HTTP / Auth ────────────────────────────────────────────────────────
 
+# 飞书已知 error code → 修复指引（指向 docs/error-codes.md 里具体段落）
+_ERROR_HINTS = {
+    99991672: "应用身份 scope 不足。开放平台 → 应用 → 权限管理 → 加 sheets:spreadsheet → 发新版本。详见 docs/error-codes.md#99991672",
+    131006: "权限不够。读：让 wiki 所有者把应用加为成员；写：加 edit 权限。详见 docs/error-codes.md#131006",
+    131005: "资源不存在或无权访问。检查 token 拼写，并在浏览器里能否打开。详见 docs/error-codes.md#131005",
+    1254040: "文档级协作者权限不足。文档分享 → 添加协作者 → 应用 → 可编辑。详见 docs/error-codes.md#1254040",
+    20027: "OAuth scope 超出应用拥有的 scope。详见 docs/error-codes.md#20027",
+    20029: "redirect_uri 不匹配。详见 docs/error-codes.md#20029",
+}
+
+
+def _format_error(code: int, msg: str, method: str, path: str) -> str:
+    hint = _ERROR_HINTS.get(code, "")
+    base = f"飞书 API 失败 [{method} {path}]：code={code} msg={msg}"
+    return f"{base}\n  ↳ 修复建议：{hint}" if hint else base
+
+
+# 默认重试策略：HTTP 5xx 和 429（限流）才重试，其它一次性失败
+_RETRY_HTTP_CODES = {429, 500, 502, 503, 504}
+_DEFAULT_MAX_RETRIES = 2  # 总共最多 1+2=3 次尝试
+
+
 def _http_json(
     method: str,
     path: str,
@@ -61,35 +83,68 @@ def _http_json(
     token: str | None = None,
     body: Any | None = None,
     timeout: int = 30,
+    max_retries: int = _DEFAULT_MAX_RETRIES,
 ) -> dict:
     url = f"https://{FEISHU_HOST}{path}"
-    headers = {"Content-Type": "application/json; charset=utf-8"}
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": "feishu-sync/0.2 (upload-sheet)",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        # 把 HTTP 错误体也尽量解析出来，便于排查
+
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            payload = json.loads(e.read().decode("utf-8"))
-        except Exception:
-            payload = {"code": e.code, "msg": e.reason}
-        raise RuntimeError(
-            f"HTTP {e.code} {method} {path}: code={payload.get('code')} msg={payload.get('msg')}"
-        )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                payload = json.loads(e.read().decode("utf-8"))
+            except Exception:
+                payload = {"code": e.code, "msg": e.reason}
+            # 只有 5xx / 429 重试，其它（4xx 业务错误）一次性退出
+            if e.code in _RETRY_HTTP_CODES and attempt < max_retries:
+                # 指数退避：500ms, 1500ms, ...
+                wait = 0.5 * (3 ** attempt)
+                print(
+                    f"[retry] HTTP {e.code} {method} {path}，{wait:.1f}s 后第 {attempt+2}/{max_retries+1} 次尝试",
+                    file=sys.stderr,
+                )
+                import time as _t
+                _t.sleep(wait)
+                last_error = e
+                continue
+            raise RuntimeError(
+                f"HTTP {e.code} {method} {path}: code={payload.get('code')} msg={payload.get('msg')}"
+            )
+        except urllib.error.URLError as e:
+            # 网络层错误（DNS / 连接超时）也重试
+            if attempt < max_retries:
+                wait = 0.5 * (3 ** attempt)
+                print(
+                    f"[retry] 网络错误 {method} {path}: {e.reason}；{wait:.1f}s 后第 {attempt+2}/{max_retries+1} 次尝试",
+                    file=sys.stderr,
+                )
+                import time as _t
+                _t.sleep(wait)
+                last_error = e
+                continue
+            raise RuntimeError(f"网络错误 {method} {path}: {e.reason}")
+
+    # 理论上走不到，因为 raise 在循环内
+    if last_error:
+        raise RuntimeError(f"重试 {max_retries+1} 次后仍失败 {method} {path}: {last_error}")
+    raise RuntimeError(f"未知错误 {method} {path}")
 
 
 def get_tenant_token(app_id: str, app_secret: str) -> str:
-    r = _http_json(
-        "POST",
-        "/open-apis/auth/v3/tenant_access_token/internal",
-        body={"app_id": app_id, "app_secret": app_secret},
-    )
+    path = "/open-apis/auth/v3/tenant_access_token/internal"
+    r = _http_json("POST", path, body={"app_id": app_id, "app_secret": app_secret})
     if r.get("code") != 0:
-        raise RuntimeError(f"获取 tenant_access_token 失败: code={r.get('code')} msg={r.get('msg')}")
+        raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "POST", path))
     return r["tenant_access_token"]
 
 
@@ -288,24 +343,18 @@ def create_spreadsheet(token: str, title: str, folder_token: str | None) -> dict
     body: dict = {"title": title}
     if folder_token:
         body["folder_token"] = folder_token
-    r = _http_json("POST", "/open-apis/sheets/v3/spreadsheets", token=token, body=body)
+    path = "/open-apis/sheets/v3/spreadsheets"
+    r = _http_json("POST", path, token=token, body=body)
     if r.get("code") != 0:
-        raise RuntimeError(
-            f"创建 spreadsheet 失败: code={r.get('code')} msg={r.get('msg')}"
-        )
+        raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "POST", path))
     return r["data"]["spreadsheet"]
 
 
 def query_default_sheet_id(token: str, spreadsheet_token: str) -> str:
-    r = _http_json(
-        "GET",
-        f"/open-apis/sheets/v3/spreadsheets/{spreadsheet_token}/sheets/query",
-        token=token,
-    )
+    path = f"/open-apis/sheets/v3/spreadsheets/{spreadsheet_token}/sheets/query"
+    r = _http_json("GET", path, token=token)
     if r.get("code") != 0:
-        raise RuntimeError(
-            f"查 sheets 列表失败: code={r.get('code')} msg={r.get('msg')}"
-        )
+        raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "GET", path))
     sheets = (r.get("data") or {}).get("sheets") or []
     if not sheets:
         raise RuntimeError("新建 spreadsheet 没有默认 sheet（异常）")
@@ -318,7 +367,9 @@ def query_default_sheet_id(token: str, spreadsheet_token: str) -> str:
 # ─── 美观度增强：表头样式 / 冻结首行 / 列宽自适应 ─────────────────────
 
 DEFAULT_HEADER_BG = "#E8F0FE"      # 浅蓝灰，比纯白高亮但不刺眼，深浅模式都能看清
-DEFAULT_HEADER_FONT_SIZE = "11pt"
+# 飞书 v2 style API 实测：fontSize 必须是 "字号pt/行高倍数" 格式字符串（错误消息有误导）
+# 直接传 int 11 会报 "must between 9 and 36"，但其实是字符串解析失败
+DEFAULT_HEADER_FONT_SIZE = "11pt/1.5"
 
 
 def apply_header_style(
@@ -342,12 +393,11 @@ def apply_header_style(
             },
         }
     }
-    return _http_json(
-        "PUT",
-        f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/style",
-        token=token,
-        body=body,
-    )
+    path = f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/style"
+    r = _http_json("PUT", path, token=token, body=body)
+    if r.get("code") != 0:
+        raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "PUT", path))
+    return r
 
 
 def freeze_rows(
@@ -366,12 +416,11 @@ def freeze_rows(
             }
         ]
     }
-    return _http_json(
-        "POST",
-        f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/sheets_batch_update",
-        token=token,
-        body=body,
-    )
+    path = f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/sheets_batch_update"
+    r = _http_json("POST", path, token=token, body=body)
+    if r.get("code") != 0:
+        raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "POST", path))
+    return r
 
 
 def _visual_width_chars(s: str) -> int:
@@ -416,33 +465,35 @@ def set_column_widths(
 ) -> list[dict]:
     """把同宽度的连续列合并成一次 dimension_range 调用，减少 API 次数。
 
-    飞书 dimension_range 的 startIndex/endIndex 含义（实测/文档）：
-      - 1-indexed
-      - startIndex 和 endIndex 都是闭区间
-    比如设置第 1~3 列：startIndex=1, endIndex=3。
+    飞书 dimension_range 实测语义（关键!!!）：
+      - **HTTP 方法是 PUT**（不是 POST，POST 会走到别的 handler 报误导性错误）
+      - startIndex/endIndex 是 **1-indexed 半开区间** [startIndex, endIndex)
+      - 比如设置第 1~3 列：startIndex=1, endIndex=4
+      - 单列：startIndex=1, endIndex=2
     """
     results: list[dict] = []
+    if not widths:
+        return results
     n = len(widths)
     i = 0
     while i < n:
         j = i + 1
         while j < n and widths[j] == widths[i]:
             j += 1
+        # i..j-1 是 0-indexed 的列索引；转 1-indexed 半开 → [i+1, j+1)
         body = {
             "dimension": {
                 "sheetId": sheet_id,
                 "majorDimension": "COLUMNS",
                 "startIndex": i + 1,
-                "endIndex": j,  # j 是下一段开始的 0-indexed = 当前段最后一列的 1-indexed
+                "endIndex": j + 1,
             },
             "dimensionProperties": {"fixedSize": widths[i]},
         }
-        r = _http_json(
-            "POST",
-            f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/dimension_range",
-            token=token,
-            body=body,
-        )
+        path = f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/dimension_range"
+        r = _http_json("PUT", path, token=token, body=body)
+        if r.get("code") != 0:
+            raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "PUT", path))
         results.append(r)
         i = j
     return results
@@ -467,16 +518,10 @@ def values_batch_update(
         # RAW：全部当字符串原样写（适合 literal 模式，保护代码片段/ID）
         "valueInputOption": "RAW" if literal else "USER_ENTERED",
     }
-    r = _http_json(
-        "POST",
-        f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_update",
-        token=token,
-        body=body,
-    )
+    path = f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_update"
+    r = _http_json("POST", path, token=token, body=body)
     if r.get("code") != 0:
-        raise RuntimeError(
-            f"写入数据失败: code={r.get('code')} msg={r.get('msg')}"
-        )
+        raise RuntimeError(_format_error(r.get("code", -1), r.get("msg", ""), "POST", path))
     return r
 
 

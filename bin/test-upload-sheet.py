@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("upload_sheet", HERE / "upload-sheet.py")
 us = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(us)
+ORIG_HTTP_JSON = us._http_json  # 保存真函数引用，供 case 8 还原（前面 cases 会 monkey-patch）
 
 
 # ── Mock Feishu API ──────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ class FakeFeishu:
             return {"code": 0, "data": {"spreadsheetToken": self.fake_ss_token, "revision": 8}}
         if path.endswith("/sheets_batch_update") and method == "POST":
             return {"code": 0, "data": {"replies": [{"updateSheet": {"properties": {"sheetId": self.fake_sheet_id}}}]}}
-        if path.endswith("/dimension_range") and method == "POST":
+        if path.endswith("/dimension_range") and method == "PUT":
             return {"code": 0, "data": {"spreadsheetToken": self.fake_ss_token}}
         if path.endswith("/values_batch_update") and method == "POST":
             ranges = (body or {}).get("valueRanges") or []
@@ -376,7 +377,8 @@ def case_styling_pipeline() -> None:
 
     check(len(style_calls) == 1 and style_calls[0][0] == "PUT", "1 次 PUT /style", f"got {style_calls}")
     check(len(freeze_calls) == 1 and freeze_calls[0][0] == "POST", "1 次 POST /sheets_batch_update", f"got {freeze_calls}")
-    check(len(dim_calls) >= 1, "至少 1 次 POST /dimension_range", f"got {dim_calls}")
+    check(len(dim_calls) >= 1 and all(m == "PUT" for m, _ in dim_calls),
+          "至少 1 次 PUT /dimension_range（不能是 POST，否则飞书走错 handler）", f"got {dim_calls}")
 
     # 检查 style body
     style_body = next(b for (m, p, b) in fake.calls if p.endswith("/style"))
@@ -450,6 +452,95 @@ def case_default_mode_protections() -> None:
     check(row1[3] == 42 and isinstance(row1[3], int), "正常整数仍识别", f"got {row1[3]!r} type={type(row1[3]).__name__}")
 
 
+def case_retry_on_5xx() -> None:
+    """_http_json 在 HTTP 503 时重试 + 在 4xx 时立即失败 + 错误带修复建议。"""
+    print("\n── case 8: retry 与错误信息友好化 ──")
+    import urllib.error
+    import urllib.request
+    # 前面 cases 把 us._http_json monkey-patch 成了 FakeFeishu；还原成真函数
+    us._http_json = ORIG_HTTP_JSON
+
+    # ---- 8a. 503 → 503 → 200 应该重试 2 次后成功 ----
+    attempts = {"n": 0}
+    fake_responses = [
+        urllib.error.HTTPError("u", 503, "Service Unavailable", {}, io.BytesIO(b'{}')),
+        urllib.error.HTTPError("u", 503, "Service Unavailable", {}, io.BytesIO(b'{}')),
+        # 第三次成功
+    ]
+
+    class FakeResp:
+        def __init__(self, body):
+            self._b = body
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self): return self._b
+
+    def fake_urlopen(req, timeout=30):
+        n = attempts["n"]
+        attempts["n"] += 1
+        if n < 2:
+            raise fake_responses[n]
+        return FakeResp(b'{"code": 0, "data": {"ok": true}}')
+
+    orig = urllib.request.urlopen
+    urllib.request.urlopen = fake_urlopen
+    try:
+        # max_retries=2 让我们最多 3 次尝试
+        r = us._http_json("GET", "/test", max_retries=2)
+        check(r.get("code") == 0, "503→503→200 重试链路通", f"got {r}")
+        check(attempts["n"] == 3, f"恰好尝试 3 次", f"got {attempts['n']}")
+    except Exception as e:
+        check(False, "503 重试不应抛出", f"got {type(e).__name__}: {e}")
+    finally:
+        urllib.request.urlopen = orig
+
+    # ---- 8b. 503 持续失败 → 应抛出 ----
+    attempts["n"] = 0
+    def always_503(req, timeout=30):
+        attempts["n"] += 1
+        raise urllib.error.HTTPError("u", 503, "Down", {}, io.BytesIO(b'{}'))
+
+    urllib.request.urlopen = always_503
+    try:
+        us._http_json("GET", "/test", max_retries=2)
+        check(False, "持续 503 应抛出", "没抛")
+    except RuntimeError as e:
+        check("503" in str(e), "持续 503 抛 RuntimeError 含 503", f"got {e}")
+        check(attempts["n"] == 3, "总共 3 次尝试（1 + 2 retry）", f"got {attempts['n']}")
+    finally:
+        urllib.request.urlopen = orig
+
+    # ---- 8c. 4xx 业务错误不重试 ----
+    attempts["n"] = 0
+    def fake_400(req, timeout=30):
+        attempts["n"] += 1
+        raise urllib.error.HTTPError(
+            "u", 400, "Bad", {}, io.BytesIO(b'{"code":99991672,"msg":"Insufficient scope"}')
+        )
+
+    urllib.request.urlopen = fake_400
+    try:
+        us._http_json("POST", "/test", max_retries=2)
+        check(False, "400 应抛出", "没抛")
+    except RuntimeError as e:
+        check(attempts["n"] == 1, "400 业务错误只尝试 1 次（不重试）", f"got {attempts['n']}")
+        check("99991672" in str(e), "错误消息含原 code", f"got {e}")
+    finally:
+        urllib.request.urlopen = orig
+
+    # ---- 8d. _format_error 给已知 code 加修复建议 ----
+    msg = us._format_error(99991672, "Insufficient scope", "POST", "/sheets")
+    check("修复建议" in msg, "_format_error 给 99991672 加修复建议", f"got {msg!r}")
+    check("sheets:spreadsheet" in msg, "建议提到具体 scope 名", f"got {msg!r}")
+
+    msg = us._format_error(131006, "permission denied", "POST", "/wiki")
+    check("edit 权限" in msg, "131006 建议提到 edit", f"got {msg!r}")
+
+    # 未知 code 不加 hint
+    msg = us._format_error(123456, "unknown", "GET", "/x")
+    check("修复建议" not in msg, "未知 code 不强加 hint", f"got {msg!r}")
+
+
 def main() -> int:
     print("=" * 60)
     print("upload-sheet.py 端到端集成测试（mock 飞书 API）")
@@ -461,6 +552,7 @@ def main() -> int:
     case_styling_pipeline()
     case_literal_mode()
     case_default_mode_protections()
+    case_retry_on_5xx()
 
     total = len(results)
     passed = sum(1 for ok, _ in results if ok)

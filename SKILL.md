@@ -84,6 +84,7 @@ bash bin/upload.sh ./x.md --folder fldcn_xxxx
 
 ```bash
 # CSV → 独立飞书 spreadsheet（类 Excel 页面）
+# 默认开启美化：表头加粗+浅蓝底+居中、冻结首行、列宽自适应
 bash bin/upload-sheet.sh ./data.csv --title "Q1 销售"
 
 # 从一份 markdown 里抓第一张 GFM 表格上传（忽略其他段落）
@@ -97,9 +98,30 @@ bash bin/upload-sheet.sh ./data.txt --format csv --title "无后缀"
 
 # 只解析+打印请求体，不真发请求（联调用）
 bash bin/upload-sheet.sh ./data.csv --dry-run
+
+# 关闭所有美化，只写数据（适合后续要程序化读 + 不在意展示）
+bash bin/upload-sheet.sh ./data.csv --plain
+
+# 自定义表头底色（默认 #E8F0FE 浅蓝；想要暖色用 #FFE5E5 等）
+bash bin/upload-sheet.sh ./data.csv --header-bg "#FFE5E5"
+
+# RAW 模式：保留代码片段、保留前导零（航班号/邮编/ID），公式 = 不被执行
+# 默认（USER_ENTERED 模式）会自动给 = 开头加 ' 防注入；literal 不需要
+bash bin/upload-sheet.sh ./flight-numbers.csv --literal
 ```
 
 成功后输出 `[DONE] https://xxx.feishu.cn/sheets/<token>` ——直接打开就能看到 Excel 风格页面。
+
+**数据保真行为表**：
+
+| 输入 | 默认（USER_ENTERED）| `--literal`（RAW）|
+|-----|--------------------|-------------------|
+| `42` | int 42 | str "42" |
+| `1.23e10` | float | str "1.23e10" |
+| `007` | str "007"（保前导零）| str "007" |
+| `=SUM(A1:A3)` | str "'=SUM(...)"（前缀防注入）| str "=SUM(...)" |
+| `2026-04-26` | 飞书识别为日期 | 字符串 |
+| `true`/`false` | bool（飞书自动识别）| bool（飞书自动识别）|
 
 ## 决策树（agent 遇到"该用哪个"时看这里）
 
@@ -116,6 +138,13 @@ bash bin/upload-sheet.sh ./data.csv --dry-run
 │       ├── .csv → 逗号分隔
 │       ├── .tsv → 制表符分隔
 │       └── .md  → 抓文件中第一张 GFM 表格
+│       │
+│       ├── 数据是否含 = 公式 / 前导零 ID（航班号/邮编）？
+│       │   └── 是 → 加 --literal（切 RAW 模式，全部当字符串）
+│       ├── 后续要程序化读，不需要展示美观度？
+│       │   └── 是 → 加 --plain（关样式 / 关冻结 / 关列宽）
+│       └── 想自定义表头颜色？
+│           └── 加 --header-bg "#RRGGBB"（默认浅蓝 #E8F0FE）
 │
 任务是要从飞书拿内容？
 ├── URL 是 /docx/<token>？

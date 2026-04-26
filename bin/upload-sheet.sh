@@ -8,12 +8,27 @@
 # 用法：
 #   bash upload-sheet.sh <file> [--title "标题"] [--folder <folder_token>]
 #                              [--format auto|csv|tsv|md] [--dry-run]
+#                              [--plain] [--literal] [--header-bg "#RRGGBB"]
 #
 # 输入格式：
 #   .csv  逗号分隔
 #   .tsv  制表符分隔
 #   .md   抓取文件中第一张 GFM 表格（| col | col |）
 #   显式 --format 覆盖扩展名推断
+#
+# 美观度（默认全开）：
+#   表头加粗 + 浅蓝底 (#E8F0FE) + 居中
+#   冻结首行
+#   列宽自适应（CJK 字符按 2 算）
+#   --plain               一次跳过所有美化
+#   --header-bg "#RRGGBB" 自定义表头背景色
+#
+# 数据保真：
+#   默认走 USER_ENTERED + 转义保护：
+#     - 前导零 (007) 保留为字符串
+#     - 科学计数法 (1.23e10) 识别为 float
+#     - = / + / - / @ 开头字符串自动加 ' 前缀，防止飞书把它当公式执行
+#   --literal             切到 RAW 模式，所有内容当字符串原样上传（不识别数字、不加前缀）
 #
 # 环境变量：
 #   FEISHU_APP_ID, FEISHU_APP_SECRET   (必需)

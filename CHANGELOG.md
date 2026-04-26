@@ -12,9 +12,20 @@
   - 前导零保护：`007` 不再被吞成 `int 7`，保留为 `str "007"`
   - 科学计数法识别：`1.23e10` 现在识别为 `float`（之前 regex 不匹配 `e`）
   - 公式注入防护：`=SUM(B2:B4)` 字符串自动加 `'` 前缀，防止飞书 USER_ENTERED 模式把它当公式执行（同样的 `+`/`-`/`@` 开头处理）
-- `bin/test-upload-sheet.py` — mock 飞书 API 的端到端测试套件，47 个断言（数据路径 + 美化路径 + literal 模式 + 错误透传）
+- **2 个美化 silent-fail bug 修复**（API 调用看似成功但样式没生效）：
+  - `fontSize` 必须传字符串 `"11pt/1.5"` 格式，不是 int（飞书错误消息 `must between 9 and 36` 误导）
+  - `dimension_range` API 必须用 **PUT** 而不是 POST（POST 会走错 handler 报误导性 `length is nil`）
+  - 现在所有 styling 函数都校验 `code != 0` 并 raise，再被 main() 的 try/except wrap 成 warn 但不致命
+- **HTTP 层鲁棒性**：
+  - 5xx + 429 自动重试（指数退避：500ms → 1500ms → ...，默认最多 3 次尝试）
+  - 网络错误（DNS / 连接超时）也走重试
+  - 4xx 业务错误立即失败不浪费时间
+  - 错误消息附带修复建议，指向 `docs/error-codes.md` 具体段落（已知 code：99991672/131006/131005/1254040/20027/20029）
+  - User-Agent 标识 `feishu-sync/0.2 (upload-sheet)`
+- `bin/test-upload-sheet.py` — mock 飞书 API 的端到端测试套件，57 个断言（数据路径 + 美化路径 + literal 模式 + 错误透传 + retry/error-format）
 - `.github/workflows/shellcheck.yml` — CI 里对 bash 脚本跑 shellcheck + `bash -n` 语法检查
 - `examples/upload-sheet.sh` — 端到端示例：生成样本 CSV → dry-run → 真实上传
+- `examples/upload-sheet-literal.sh` — 默认模式 vs `--literal` 模式对比演示（航班号/前导零 ID/公式样字符串场景）
 
 ### Docs
 - `SKILL.md` 决策树新增"产出 docx vs 产出 sheet"分支；`README.md` 加上传 sheet 命令段
