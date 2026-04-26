@@ -41,24 +41,42 @@
    - 写 spreadsheet：`sheets:spreadsheet`（含创建+读写）；指定 `--folder` 还需 `drive:drive`
 3. **运行环境**：bash + python3 (>=3.6) + git（macOS / Linux）必需。**完整功能**额外装 Python 3.8+/feishu-docx + Node 18+/uploader（高保真下载 + LaTeX 渲染）。**最小集**：只有 bash + python3 也能跑——`download.sh` 自动降级到 stdlib raw_content，`upload-sheet.sh` 本身就是纯 stdlib，零外部依赖。
 
-### 安装
+### 安装（3 种方式任选）
+
+#### 方式 A：`npx skills add`（推荐 ⭐ 一行命令，跨 agent）
+
+通过 [vercel-labs/skills](https://github.com/vercel-labs/skills)（16k stars 跨 agent 标准工具，支持 Claude Code / Cursor / Codex / OpenCode 等 45+ agent）：
 
 ```bash
-git clone <this-repo> ~/code/feishu-sync
+# 全局安装（推荐）
+npx skills add 0xE1337/feishu-sync -g
+
+# 装完到 skill 目录跑一次依赖装配（可选，最小集不用跑）
+cd ~/.claude/skills/feishu-sync && bash bin/setup.sh
+```
+
+> 不跑 `setup.sh` 也能用——`download.sh` 自动 fallback 到 stdlib，`upload-sheet.sh` 本身纯 stdlib。`setup.sh` 是为了装 feishu-docx（高保真下载）+ uploader（LaTeX 渲染），完整功能才需要。
+
+#### 方式 B：Claude Code 原生 `/plugin install`
+
+在 Claude Code 对话里：
+
+```
+/plugin marketplace add 0xE1337/feishu-sync
+/plugin install feishu-sync@feishu-sync
+```
+
+#### 方式 C：手动 `git clone + install.sh`（兼容老路径，适合开发本项目）
+
+```bash
+git clone https://github.com/0xE1337/feishu-sync ~/code/feishu-sync
 cd ~/code/feishu-sync
-bash install.sh
+bash install.sh                # symlink 到 ~/.claude/skills/feishu-sync + 装依赖
+bash install.sh --no-deps      # 只装 skill，不装依赖
+bash install.sh --copy         # 用复制代替 symlink（离线环境/Windows）
 ```
 
-`install.sh` 做两件事：
-1. 在 `~/.claude/skills/feishu-sync` 建软链接（供 Claude Code 当 skill 用）
-2. 跑 `bin/setup.sh` 装依赖（feishu-docx via pipx/uv，uploader 克隆到 `~/.feishu-sync/`）
-
-不用 Claude Code？也可以独立用：
-
-```bash
-bash install.sh --no-deps   # 仅装依赖跳过 skill 链接
-# 或者只跑 bin/setup.sh
-```
+`install.sh` 做两件事：① symlink 到 `~/.claude/skills/feishu-sync` ② 跑 `bin/setup.sh` 装依赖。
 
 ### 配置凭证
 
@@ -200,9 +218,13 @@ bash bin/upload-sheet.sh ./weekly.csv --update "https://my.feishu.cn/sheets/XYZ"
 feishu-sync/
 ├── README.md
 ├── LICENSE                 (MIT)
-├── SKILL.md                (Claude Code skill 入口)
+├── SKILL.md                (Claude Code skill 入口，root 放 → npx skills add 直接识别)
 ├── install.sh / uninstall.sh
 ├── .env.example
+│
+├── .claude-plugin/         (Claude Code 原生 /plugin install 支持)
+│   ├── plugin.json         - plugin manifest（name/version/author/keywords）
+│   └── marketplace.json    - single-plugin marketplace（让本 repo 自己就是 marketplace）
 │
 ├── bin/                    (可执行脚本)
 │   ├── setup.sh            - 幂等装依赖
@@ -213,7 +235,7 @@ feishu-sync/
 │   ├── upload.sh           - 上传路由（含 LaTeX 检测 + 双向 fallback）
 │   ├── upload-sheet.sh     - 单张表格 → 飞书电子表格（thin wrapper）
 │   ├── upload-sheet.py     - upload-sheet 实现（纯 stdlib，CSV/TSV/MD-table 解析 + 美化 + Sheets API）
-│   └── test-upload-sheet.py - upload-sheet 的 mock 集成测试（47 断言）
+│   └── test-upload-sheet.py - upload-sheet 的 mock 集成测试（76 断言）
 │
 ├── docs/                   (实测归纳的知识)
 │   ├── permission-model.md - 飞书 3 层权限模型

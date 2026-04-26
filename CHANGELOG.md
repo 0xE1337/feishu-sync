@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- **`npx skills add` 一键安装**——通过 [vercel-labs/skills](https://github.com/vercel-labs/skills)（16k stars 跨 agent 标准工具，支持 Claude Code / Cursor / Codex / OpenCode 等 45+ agent）。零结构改动：vercel-labs/skills 的 `findSkillDirs` 逻辑在 root 检测到 SKILL.md 即识别为 skill，整个 repo 用 `cp --recursive --dereference` 复制/symlink 到 `~/.claude/skills/feishu-sync/`。用户安装路径从 `git clone + bash install.sh`（2 步）缩到 `npx skills add 0xE1337/feishu-sync -g`（1 步）。
+- **Claude Code 原生 `/plugin install` 支持**——新增 `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`，让本 repo 既是 plugin 又是 single-plugin marketplace。用户在 Claude Code 对话里 `/plugin marketplace add 0xE1337/feishu-sync` + `/plugin install feishu-sync@feishu-sync` 即装。
+- **README "安装" 段重写为 3 方式并列**：① `npx skills add`（推荐）② `/plugin install`（Claude Code 原生）③ `git clone + install.sh`（兼容老路径，适合开发）。明确告知 `setup.sh` 是 optional——最小集不跑也能用（download fallback + upload-sheet 纯 stdlib）。
 - **`bin/download-lite.py`** — 纯 stdlib 飞书 wiki/docx 下载实现（Python 3.6+，`urllib.request` 直调 Open API）。`download.sh` 在 `feishu-docx` CLI 不可用时自动 `exec` 到这里——保真度降低（输出 raw_content、不下图片、表格压成纯文本），但保证基础下载能力永不中断。同时提供 `--probe` / `--save-meta` 子命令给 `download.sh` 做 cache 探测和元数据落盘。
 - **`download.sh --cache-mode auto|force|skip`**（默认 `auto`）— metadata-based 增量同步：调远端 `revision_id`/`obj_edit_time`，与本地 `<out>/.meta/<obj_token>.json` 比对，命中跳过下载。也接受环境变量 `CACHE_MODE`（命令行参数优先）。`force` 强制重下覆盖；`skip` 仅用本地副本不联网（仅单 docx URL 支持，wiki URL 离线无法解析 obj_token）。约束：wiki 全量递归 + feishu-docx 路径暂不做 per-node cache，按 force 重下整个 space；要 per-node cache 改走 lite 路径。
 - **`upload.sh` 双向 fallback** — feishu-docx 不可用时降级到 Node uploader；uploader 不可用时反过来降级到 feishu-docx。两个都不在才会失败，最大化"装一个就能跑"的容错性。

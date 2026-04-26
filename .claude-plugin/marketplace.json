@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "feishu-sync",
+  "description": "Two-way Feishu↔Markdown sync skill — single-plugin marketplace.",
+  "owner": {
+    "name": "0xE",
+    "url": "https://github.com/0xE1337"
+  },
+  "plugins": [
+    {
+      "name": "feishu-sync",
+      "description": "Two-way Feishu↔Markdown sync. Wiki/docx download with metadata cache, markdown upload with LaTeX rendering, CSV/TSV→Sheets. Use as Claude Code skill, bash CLI, or any AI agent's tool.",
+      "version": "0.2.0",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/0xE1337/feishu-sync",
+      "author": {
+        "name": "0xE",
+        "url": "https://github.com/0xE1337"
+      }
+    }
+  ]
+}
