@@ -1,16 +1,16 @@
 # feishu-sync
 
-**飞书 ↔ Markdown 双向同步工具链**。下载飞书 docx/wiki 为 markdown，上传 markdown 到飞书（自动检测 LaTeX 公式并正确渲染）。
+**飞书 ↔ Markdown 双向同步工具链**。下载飞书 docx/wiki 为 markdown（带 metadata 增量缓存），上传 markdown 到飞书（自动检测 LaTeX 公式并正确渲染），CSV/MD-table/TSV 直传飞书电子表格。
 
 面向 **AI agent + 团队**设计：portable、自装依赖、错误可操作、链接由任务传入不硬编码。可作为 Claude Code skill 使用，也可以独立 bash 调用。
 
 ## 核心特性
 
-- **双向**：下载（docx / wiki 空间）+ 上传（含公式渲染）
-- **薄编排**：不重复造轮子，只做决策路由 + 依赖装配
-  - 下载走 [feishu-docx](https://github.com/JessonChan/feishu-docx)
-  - 上传有公式走 [feishu-markdown-uploader](https://github.com/0xE1337/feishu-markdown-uploader)（LaTeX → equation 块）
-  - 上传无公式走 feishu-docx（最简路径）
+- **双向**：下载（docx / wiki 空间，带 metadata cache）+ 上传（含公式渲染）
+- **薄编排 + 三层降级**：不重复造轮子，只做决策路由 + 依赖装配；任一外部依赖缺失时自动降到 stdlib
+  - 下载首选 [feishu-docx](https://github.com/JessonChan/feishu-docx)（高保真），缺失时降到内置 `bin/download-lite.py`（纯 stdlib raw_content）
+  - 上传有公式走 [feishu-markdown-uploader](https://github.com/0xE1337/feishu-markdown-uploader)（LaTeX → equation 块）；缺失时降到 feishu-docx
+  - 上传无公式走 feishu-docx；缺失时降到 uploader
 - **表格独立通道**：CSV/MD-table/TSV → 飞书电子表格（Sheets，类 Excel 独立页面），纯 stdlib，零额外依赖
 - **agent-friendly**：首次调用自装依赖，失败有明确错误码和修法
 - **portable**：零硬编码业务信息，一套脚本跑任何飞书/Lark 租户
@@ -32,7 +32,7 @@
    - 读：`wiki:wiki:readonly` + `docx:document:readonly`
    - 写 docx：`docx:document` + `drive:drive`
    - 写 spreadsheet：`sheets:spreadsheet`（含创建+读写）；指定 `--folder` 还需 `drive:drive`
-3. **运行环境**：Python 3.8+、Node.js 18+、git、bash（macOS / Linux）。`upload-sheet.sh` 仅依赖 python3 stdlib，无需安装 feishu-docx / uploader。
+3. **运行环境**：bash + python3 (>=3.6) + git（macOS / Linux）必需。**完整功能**额外装 Python 3.8+/feishu-docx + Node 18+/uploader（高保真下载 + LaTeX 渲染）。**最小集**：只有 bash + python3 也能跑——`download.sh` 自动降级到 stdlib raw_content，`upload-sheet.sh` 本身就是纯 stdlib，零外部依赖。
 
 ### 安装
 
@@ -84,7 +84,27 @@ bash bin/download.sh "https://xxx.feishu.cn/docx/<token>" -o ./out/
 bash bin/download.sh "https://xxx.feishu.cn/wiki/<root_token>" -o ./out/ --recursive
 ```
 
-### 上传 markdown（自动检测公式）
+### 增量同步（cache 模式）
+
+`download.sh` 默认走 metadata 比对：远端 `revision_id` / `obj_edit_time` 与本地一致则命中本地副本，不走网络。
+
+```bash
+# auto（默认）：比对 metadata，命中跳过下载
+bash bin/download.sh "https://xxx.feishu.cn/docx/<token>" -o ./out/
+
+# force：强制重下，覆盖本地（含 .meta）
+bash bin/download.sh "https://xxx.feishu.cn/docx/<token>" -o ./out/ --cache-mode force
+
+# skip：只用本地副本，不联网（仅单 docx URL 支持；无副本则报错）
+bash bin/download.sh "https://xxx.feishu.cn/docx/<token>" -o ./out/ --cache-mode skip
+
+# 也可以走环境变量（命令行参数优先级更高）
+CACHE_MODE=force bash bin/download.sh <URL> -o ./out/
+```
+
+cache 元数据存在 `<out>/.meta/<obj_token>.json`。**约束**：wiki 全量递归（`--recursive`）+ feishu-docx 路径暂不做 per-node cache，按 force 行为重下整个 space；要 per-node cache 改走 lite 路径（卸载 feishu-docx 让它自动 fallback，或直接 `python3 bin/download-lite.py <wiki_url> --recursive --cache-mode auto`）。
+
+### 上传 markdown（自动检测公式 + 双向降级）
 
 ```bash
 # 无公式 → 走 feishu-docx create
@@ -99,6 +119,8 @@ bash bin/upload.sh ./x.md --force-latex
 # 指定飞书 folder_token
 bash bin/upload.sh ./x.md --folder fldcn_xxxx
 ```
+
+`upload.sh` 双向降级：feishu-docx 不可用时降到 uploader，uploader 不可用时降到 feishu-docx——两个都没装才会失败。
 
 ### 上传单张表格 → 飞书电子表格（Sheets）
 
@@ -173,8 +195,9 @@ feishu-sync/
 │   ├── setup.sh            - 幂等装依赖
 │   ├── probe.sh            - 自检
 │   ├── token.sh            - 取 tenant_access_token
-│   ├── download.sh         - 下载路由
-│   ├── upload.sh           - 上传路由（含 LaTeX 检测）
+│   ├── download.sh         - 下载路由（feishu-docx → stdlib fallback，带 --cache-mode）
+│   ├── download-lite.py    - 纯 stdlib 下载实现（fallback + cache probe/save-meta 子命令）
+│   ├── upload.sh           - 上传路由（含 LaTeX 检测 + 双向 fallback）
 │   ├── upload-sheet.sh     - 单张表格 → 飞书电子表格（thin wrapper）
 │   ├── upload-sheet.py     - upload-sheet 实现（纯 stdlib，CSV/TSV/MD-table 解析 + 美化 + Sheets API）
 │   └── test-upload-sheet.py - upload-sheet 的 mock 集成测试（47 断言）
@@ -198,7 +221,7 @@ feishu-sync/
 2. **链接/参数由调用方传**：脚本里零硬编码，换租户/换项目不用改代码
 3. **自证可用**：`setup.sh` + `probe.sh` 让 agent 独立诊断环境
 4. **错误可操作**：每个失败点都对应 `docs/error-codes.md` 里具体修法，不让人干瞪眼
-5. **优雅降级**：LaTeX 检测失败时退回到 feishu-docx，保证基础能力不中断
+5. **优雅降级**：外部依赖（feishu-docx / uploader）缺失时自动降到 stdlib 或互为兜底；LaTeX 检测失败时退回到 feishu-docx——保证基础能力永不中断
 
 ## 故障排查
 

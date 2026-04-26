@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- **`bin/download-lite.py`** — 纯 stdlib 飞书 wiki/docx 下载实现（Python 3.6+，`urllib.request` 直调 Open API）。`download.sh` 在 `feishu-docx` CLI 不可用时自动 `exec` 到这里——保真度降低（输出 raw_content、不下图片、表格压成纯文本），但保证基础下载能力永不中断。同时提供 `--probe` / `--save-meta` 子命令给 `download.sh` 做 cache 探测和元数据落盘。
+- **`download.sh --cache-mode auto|force|skip`**（默认 `auto`）— metadata-based 增量同步：调远端 `revision_id`/`obj_edit_time`，与本地 `<out>/.meta/<obj_token>.json` 比对，命中跳过下载。也接受环境变量 `CACHE_MODE`（命令行参数优先）。`force` 强制重下覆盖；`skip` 仅用本地副本不联网（仅单 docx URL 支持，wiki URL 离线无法解析 obj_token）。约束：wiki 全量递归 + feishu-docx 路径暂不做 per-node cache，按 force 重下整个 space；要 per-node cache 改走 lite 路径。
+- **`upload.sh` 双向 fallback** — feishu-docx 不可用时降级到 Node uploader；uploader 不可用时反过来降级到 feishu-docx。两个都不在才会失败，最大化"装一个就能跑"的容错性。
 - **`bin/upload-sheet.sh` + `bin/upload-sheet.py`** — 把单张表格（CSV / TSV / Markdown GFM 表格）作为**独立飞书电子表格（Sheets）**上传，得到一个类 Excel 的飞书页面。区别于 `upload.sh`（markdown → docx 内表格块）。纯 Python stdlib，零额外依赖；走 `sheets/v3` (创建/查 sheet) + `sheets/v2/values_batch_update` (写值) API。支持 `--title` / `--folder` / `--format` / `--dry-run`，自动数字类型识别（`USER_ENTERED`），fail-fast 校验飞书侧 5000×100 / 40000-char 上限。
 - **美观度增强（默认开启）**：上传后自动应用 ① 表头加粗 + 浅蓝底 (`#E8F0FE`) + 居中 ② 冻结首行 ③ 列宽自适应（CJK 字符按 2 算，连续同宽列合并成单次 API 调用）。三个可关闭：`--plain` 一次跳过所有美化。`--header-bg "#FFE5E5"` 自定义表头色。
 - **`--literal` flag**：切到 RAW 上传模式，所有单元格当字符串原样保留（不做数字识别、不做公式 `=` 转义）。适合上传代码片段、保留前导零的 ID（航班号/邮编）。
