@@ -10,15 +10,22 @@ on:
 jobs:
   test:
     name: upload-sheet mock tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # 声明的最低 baseline 是 3.6（纯 stdlib，无 3.7+ 语法）
-        # 实测覆盖：3.7（最老在售）/ 3.10 / 3.12（主流 LTS）
+        # 实测覆盖：3.7（最老在 GH Actions 还能装的）/ 3.10 / 3.12（主流 LTS）
         # 3.6 通过下面独立的 ast feature_version 严格语法验证（actions/setup-python 在
-        # ubuntu-latest 已不预编译 3.6；ast 3.6 验证 + 3.7 runtime = 与 3.6 runtime 等价）
-        python-version: ["3.7", "3.10", "3.12"]
+        # ubuntu-latest=24.04 已不预编译 3.6 也不预编译 3.7；3.7 钉 ubuntu-22.04 仍可装）
+        # ast 3.6 验证 + 3.7 runtime = 与 3.6 runtime 等价
+        include:
+          - python-version: "3.7"
+            os: ubuntu-22.04
+          - python-version: "3.10"
+            os: ubuntu-latest
+          - python-version: "3.12"
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
