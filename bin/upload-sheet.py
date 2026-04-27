@@ -32,8 +32,6 @@ upload-sheet.py — 把单张表格上传到飞书电子表格（Sheets，不是
   - 单元格 ≤ 40000 字符
   超出会在调用前 fail-fast 并提示拆分。
 """
-from __future__ import annotations  # 让 `str | None` 等注解延迟求值，兼容 Python 3.7+
-
 import argparse
 import csv
 import io
@@ -44,7 +42,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, List, Optional
 
 FEISHU_HOST = os.environ.get("FEISHU_HOST", "open.feishu.cn")
 MAX_ROWS = 5000
@@ -80,8 +78,8 @@ def _http_json(
     method: str,
     path: str,
     *,
-    token: str | None = None,
-    body: Any | None = None,
+    token: Optional[str] = None,
+    body: Optional[Any] = None,
     timeout: int = 30,
     max_retries: int = _DEFAULT_MAX_RETRIES,
 ) -> dict:
@@ -94,7 +92,7 @@ def _http_json(
         headers["Authorization"] = f"Bearer {token}"
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
 
-    last_error: Exception | None = None
+    last_error: Optional[Exception] = None
     for attempt in range(max_retries + 1):
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
@@ -150,13 +148,13 @@ def get_tenant_token(app_id: str, app_secret: str) -> str:
 
 # ─── 解析：CSV / TSV / Markdown table → 2D array ───────────────────────
 
-def parse_csv(text: str, delimiter: str = ",") -> list[list[str]]:
+def parse_csv(text: str, delimiter: str = ",") -> List[List[str]]:
     rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
     # 去掉完全空行（reader 在尾部空行会产生 []）
     return [row for row in rows if any(cell.strip() != "" for cell in row)]
 
 
-def parse_md_table(text: str) -> list[list[str]]:
+def parse_md_table(text: str) -> List[List[str]]:
     """
     抽出 markdown 文本里**第一张** GFM 表格，返回 2D 数组（表头 + 数据行）。
     GFM 表格规则：
@@ -180,7 +178,7 @@ def parse_md_table(text: str) -> list[list[str]]:
     if start is None:
         raise ValueError("未在 markdown 中找到 GFM 表格（需要 | col | col | 格式 + 分隔行）")
 
-    rows: list[list[str]] = []
+    rows: List[List[str]] = []
     # 表头
     header = _split_md_row(lines[start])
     rows.append(header)
@@ -199,7 +197,7 @@ def parse_md_table(text: str) -> list[list[str]]:
     return rows
 
 
-def _split_md_row(line: str) -> list[str]:
+def _split_md_row(line: str) -> List[str]:
     """切分一行 markdown 表格，处理转义的 \\|"""
     s = line.strip()
     if s.startswith("|"):
@@ -212,7 +210,7 @@ def _split_md_row(line: str) -> list[str]:
     return cells
 
 
-def parse_input(file_path: Path, fmt: str) -> list[list[str]]:
+def parse_input(file_path: Path, fmt: str) -> List[List[str]]:
     text = file_path.read_text(encoding="utf-8")
     if fmt == "csv":
         return parse_csv(text, ",")
@@ -223,7 +221,7 @@ def parse_input(file_path: Path, fmt: str) -> list[list[str]]:
     raise ValueError(f"未知 format: {fmt}")
 
 
-def detect_format(file_path: Path, override: str | None) -> str:
+def detect_format(file_path: Path, override: Optional[str]) -> str:
     if override and override != "auto":
         return override
     suf = file_path.suffix.lower()
@@ -284,13 +282,13 @@ def escape_formula(s: str) -> str:
     return s
 
 
-def coerce_rows(rows: Iterable[Iterable[str]], literal: bool = False) -> list[list[Any]]:
+def coerce_rows(rows: Iterable[Iterable[str]], literal: bool = False) -> List[List[Any]]:
     """coerce 每个 cell。literal=True 时所有内容当字符串原样保留（含公式样字符串）。"""
     if literal:
         return [[c for c in row] for row in rows]
-    out: list[list[Any]] = []
+    out: List[List[Any]] = []
     for row in rows:
-        new_row: list[Any] = []
+        new_row: List[Any] = []
         for c in row:
             v = coerce_cell(c)
             if isinstance(v, str):
@@ -300,7 +298,7 @@ def coerce_rows(rows: Iterable[Iterable[str]], literal: bool = False) -> list[li
     return out
 
 
-def validate_size(rows: list[list[Any]]) -> None:
+def validate_size(rows: List[List[Any]]) -> None:
     if not rows:
         raise ValueError("解析结果为空（0 行），拒绝上传")
     if len(rows) > MAX_ROWS:
@@ -368,7 +366,7 @@ def parse_spreadsheet_token(url_or_token: str) -> str:
     return s
 
 
-def create_spreadsheet(token: str, title: str, folder_token: str | None) -> dict:
+def create_spreadsheet(token: str, title: str, folder_token: Optional[str]) -> dict:
     body: dict = {"title": title}
     if folder_token:
         body["folder_token"] = folder_token
@@ -470,13 +468,13 @@ def _visual_width_chars(s: str) -> int:
 
 
 def compute_column_widths(
-    rows: list[list[Any]], *, min_w: int = 80, max_w: int = 300, char_px: int = 8
-) -> list[int]:
+    rows: List[List[Any]], *, min_w: int = 80, max_w: int = 300, char_px: int = 8
+) -> List[int]:
     """根据每列最大单元格宽度估算像素宽。"""
     if not rows:
         return []
     n_cols = max(len(r) for r in rows)
-    widths: list[int] = []
+    widths: List[int] = []
     for ci in range(n_cols):
         col_max = 0
         for row in rows:
@@ -490,8 +488,8 @@ def compute_column_widths(
 
 
 def set_column_widths(
-    token: str, spreadsheet_token: str, sheet_id: str, widths: list[int]
-) -> list[dict]:
+    token: str, spreadsheet_token: str, sheet_id: str, widths: List[int]
+) -> List[dict]:
     """把同宽度的连续列合并成一次 dimension_range 调用，减少 API 次数。
 
     飞书 dimension_range 实测语义（关键!!!）：
@@ -500,7 +498,7 @@ def set_column_widths(
       - 比如设置第 1~3 列：startIndex=1, endIndex=4
       - 单列：startIndex=1, endIndex=2
     """
-    results: list[dict] = []
+    results: List[dict] = []
     if not widths:
         return results
     n = len(widths)
@@ -532,7 +530,7 @@ def values_batch_update(
     token: str,
     spreadsheet_token: str,
     sheet_id: str,
-    values: list[list[Any]],
+    values: List[List[Any]],
     *,
     literal: bool = False,
 ) -> dict:

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **`upload-sheet.py` 真正兼容 Python 3.6+**——之前用了 `from __future__ import annotations` 加 `list[X]` / `str | None` 等 PEP 585/604 注解，最低实际是 3.7。Multica runtime 是 3.6，跑到 line 35 就 `SyntaxError`，触发 agent 自发降级到 `upload.sh`（issues-tracker 退化为 docx 死表，丢 Sheets 在线编辑能力）。改法：删 `from __future__`，所有 `list[X]/str | None` 换成 `typing.List[X]/Optional[X]`。`bin/upload-sheet.sh` 版本检查从 `>=3.7` 同步降到 `>=3.6`。`ast.parse(..., feature_version=(3,6))` 严格语法验证通过；76/76 mock 测试无回归。**这统一了 skill 的 Python baseline**——`download-lite.py` 已经声明 3.6+，`upload-sheet.py` 现在对齐。
+
 ### Added
 - **`npx skills add` 一键安装**——通过 [vercel-labs/skills](https://github.com/vercel-labs/skills)（16k stars 跨 agent 标准工具，支持 Claude Code / Cursor / Codex / OpenCode 等 45+ agent）。零结构改动：vercel-labs/skills 的 `findSkillDirs` 逻辑在 root 检测到 SKILL.md 即识别为 skill，整个 repo 用 `cp --recursive --dereference` 复制/symlink 到 `~/.claude/skills/feishu-sync/`。用户安装路径从 `git clone + bash install.sh`（2 步）缩到 `npx skills add 0xE1337/feishu-sync -g`（1 步）。
 - **Claude Code 原生 `/plugin install` 支持**——新增 `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`，让本 repo 既是 plugin 又是 single-plugin marketplace。用户在 Claude Code 对话里 `/plugin marketplace add 0xE1337/feishu-sync` + `/plugin install feishu-sync@feishu-sync` 即装。

@@ -55,7 +55,7 @@ if [ ! -f "$PY" ]; then
   exit 1
 fi
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "[ERR] 需要 python3（>=3.7）" >&2
+  echo "[ERR] 需要 python3（>=3.6，纯 stdlib，无额外依赖）" >&2
   exit 1
 fi
 
