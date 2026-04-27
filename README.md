@@ -23,6 +23,21 @@ For **anyone using Feishu**: developers, technical writers, knowledge management
 - **Portable**: zero hardcoded business identifiers, one set of scripts works for any Feishu/Lark tenant
 - **Open knowledge**: [permission model](docs/permission-model.md) / [error code manual](docs/error-codes.md) / [auth modes](docs/auth-modes.md) — all distilled from real testing
 
+## How feishu-sync compares to alternatives
+
+`feishu-sync` is **complementary**, not a replacement, to projects like [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli):
+
+| | feishu-cli | feishu-sync |
+|---|---|---|
+| Positioning | Full-stack Feishu CLI (Swiss Army knife) | Knowledge sync + table import (specialized chisel) |
+| Command count | 200+ across docs/sheet/wiki/msg/calendar/task/meeting | 3 focused: `download` / `upload` / `upload-sheet` |
+| LaTeX formulas | Inline-degraded (per its README) | Real `equation` block via [feishu-markdown-uploader](https://github.com/0xE1337/feishu-markdown-uploader) |
+| Metadata-based incremental cache | Not supported | ✅ `--cache-mode auto/force/skip`, compares `revision_id` |
+| CSV/TSV → standalone Feishu Sheet | Not supported | ✅ 13 flags incl. styling, `--literal`, `--update` |
+| Three-layer fallback (stdlib safety net) | Not supported | ✅ `download-lite.py` keeps base capability alive when feishu-docx is missing |
+
+**Use both together**: install `feishu-cli` for full-stack Feishu coverage, and `feishu-sync` whenever you specifically need incremental wiki sync, CSV→Sheet imports, or true LaTeX equation rendering. The scopes don't overlap.
+
 ## Who is this for
 
 - **Individual developers / technical writers** — publish local markdown (papers, technical notes, blog drafts) to Feishu spaces, including LaTeX formulas

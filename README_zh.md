@@ -23,6 +23,21 @@
 - **portable**：零硬编码业务信息，一套脚本跑任何飞书/Lark 租户
 - **open knowledge**：[权限模型](docs/permission-model.md) / [错误码手册](docs/error-codes.md) / [鉴权模式选择](docs/auth-modes.md) 都是实测归纳
 
+## 与同类工具对比
+
+`feishu-sync` 与 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 等项目是**互补关系**，不是替代：
+
+| | feishu-cli | feishu-sync |
+|---|---|---|
+| 定位 | 飞书全栈 CLI（瑞士军刀） | 知识同步 + 表格上传专深（雕刻刀） |
+| 命令数 | 200+，覆盖 doc/sheet/wiki/msg/calendar/task/meeting | 3 个聚焦命令：`download` / `upload` / `upload-sheet` |
+| LaTeX 公式 | 降级为 inline（其 README 自述） | 真 `equation` block，走 [feishu-markdown-uploader](https://github.com/0xE1337/feishu-markdown-uploader) |
+| Metadata 增量缓存 | 不支持 | ✅ `--cache-mode auto/force/skip`，比对 `revision_id` |
+| CSV/TSV → 独立飞书 Sheet | 不支持 | ✅ 13 个 flag，含美化、`--literal`、`--update` |
+| 三层 fallback（stdlib 兜底） | 不支持 | ✅ `download-lite.py` 在 feishu-docx 缺失时保住基础能力 |
+
+**两个一起用**：装 `feishu-cli` 拿全栈飞书覆盖；当你需要增量 wiki 同步、CSV → 独立 Sheet 上传、或真 LaTeX 公式渲染时，再用 `feishu-sync`。两者作用域不重叠。
+
 ## 适合谁
 
 - **个人开发者 / 技术写作者** — 把本地 md（论文、技术笔记、博客草稿）发布到飞书空间，含 LaTeX 公式
