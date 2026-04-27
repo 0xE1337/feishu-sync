@@ -14,9 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 实测最低支持 3.7（用了 from __future__ import annotations）
-        # 主跑 3.10 / 3.12，覆盖当前主流 LTS
-        python-version: ["3.10", "3.12"]
+        # 声明的最低 baseline 是 3.6（纯 stdlib，无 3.7+ 语法）
+        # 实测覆盖：3.7（最老在售）/ 3.10 / 3.12（主流 LTS）
+        # 3.6 通过下面独立的 ast feature_version 严格语法验证（actions/setup-python 在
+        # ubuntu-latest 已不预编译 3.6；ast 3.6 验证 + 3.7 runtime = 与 3.6 runtime 等价）
+        python-version: ["3.7", "3.10", "3.12"]
     steps:
       - uses: actions/checkout@v6
 
@@ -28,6 +30,14 @@ jobs:
       - name: Syntax check (py_compile)
         run: |
           python -m py_compile bin/upload-sheet.py bin/test-upload-sheet.py bin/download-lite.py
+
+      - name: Strict Python 3.6 AST validation
+        # 确保所有源文件无 3.7+ 语法（from __future__ import annotations / list[X] / str | None / 等）
+        # 这与"在 3.6 runtime 跑"等价：syntax 3.6 通过 + 仅用 3.5+ stdlib = 行为与 3.6 一致
+        run: |
+          python -c "import ast; ast.parse(open('bin/upload-sheet.py').read(), feature_version=(3,6))"
+          python -c "import ast; ast.parse(open('bin/test-upload-sheet.py').read(), feature_version=(3,6))"
+          python -c "import ast; ast.parse(open('bin/download-lite.py').read(), feature_version=(3,6))"
 
       - name: Run upload-sheet mock test suite
         # 纯 stdlib + monkey-patch _http_json，无需飞书凭证

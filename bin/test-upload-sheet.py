@@ -14,8 +14,6 @@ test-upload-sheet.py — 端到端集成测试（不依赖真实飞书凭证）
 跑法：python3 bin/test-upload-sheet.py
 退出码：0 全绿 / 1 失败
 """
-from __future__ import annotations
-
 import importlib.util
 import io
 import json
@@ -24,6 +22,7 @@ import sys
 import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("upload_sheet", HERE / "upload-sheet.py")
@@ -38,7 +37,7 @@ class FakeFeishu:
     """录制所有调用，按 path 路由返回 canned response。"""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, dict | None]] = []
+        self.calls: List[Tuple[str, str, Optional[dict]]] = []
         self.fake_token = "t-" + "x" * 40
         self.fake_ss_token = "shtcnFAKE" + "S" * 18
         self.fake_sheet_id = "sht1234"
@@ -115,7 +114,7 @@ class FakeFeishu:
 PASS = "\033[32m[PASS]\033[0m"
 FAIL = "\033[31m[FAIL]\033[0m"
 
-results: list[tuple[bool, str]] = []
+results: List[Tuple[bool, str]] = []
 
 
 def check(cond: bool, name: str, detail: str = "") -> None:
@@ -129,13 +128,13 @@ def run_main(
     file_path: Path,
     *,
     title: str,
-    folder: str | None,
+    folder: Optional[str],
     fmt: str,
     plain: bool = True,  # 默认跳过美化，让既有测试只关注数据路径（4 次 API 调用）
     literal: bool = False,
-    update: str | None = None,
-    extra_args: list[str] | None = None,
-) -> tuple[int, str, str]:
+    update: Optional[str] = None,
+    extra_args: Optional[List[str]] = None,
+) -> Tuple[int, str, str]:
     """跑 us.main()，捕获 stdout/stderr，返回 (exit_code, stdout, stderr)。
     复刻 entry-point 的 try/except 行为：未捕获异常 → exit 1 + 错误打到 stderr。
     """
