@@ -8,17 +8,35 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 单独的 3.6 语法严格验证 job
+  # ast.parse(feature_version=...) 是 Python 3.8+ API，所以固定用 3.10 跑这个 check
+  # 它确保所有 bin/*.py 不含 3.7+ 语法（from __future__ import annotations、list[X]、str | None 等）
+  ast-3-6-syntax:
+    name: AST strict Python 3.6 syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Verify all bin/*.py parse under Python 3.6 syntax
+        run: |
+          python -c "import ast; ast.parse(open('bin/upload-sheet.py').read(), feature_version=(3,6))"
+          python -c "import ast; ast.parse(open('bin/test-upload-sheet.py').read(), feature_version=(3,6))"
+          python -c "import ast; ast.parse(open('bin/download-lite.py').read(), feature_version=(3,6))"
+          echo "[OK] all bin/*.py pass Python 3.6 strict AST validation"
+
   test:
     name: upload-sheet mock tests (Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # 声明的最低 baseline 是 3.6（纯 stdlib，无 3.7+ 语法）
-        # 实测覆盖：3.7（最老在 GH Actions 还能装的）/ 3.10 / 3.12（主流 LTS）
-        # 3.6 通过下面独立的 ast feature_version 严格语法验证（actions/setup-python 在
-        # ubuntu-latest=24.04 已不预编译 3.6 也不预编译 3.7；3.7 钉 ubuntu-22.04 仍可装）
-        # ast 3.6 验证 + 3.7 runtime = 与 3.6 runtime 等价
+        # 声明的最低 runtime baseline 是 3.6（语法由 ast-3-6-syntax job 守护）
+        # 这里实测覆盖：3.7（最老在 GH Actions 还能装的）/ 3.10 / 3.12（主流 LTS）
+        # ubuntu-latest=24.04 已不预编译 3.7，所以 3.7 job 钉 ubuntu-22.04
+        # ast 3.6 syntax + 3.7 runtime + 仅用 3.5+ stdlib = 与 3.6 runtime 行为等价
         include:
           - python-version: "3.7"
             os: ubuntu-22.04
@@ -37,14 +55,6 @@ jobs:
       - name: Syntax check (py_compile)
         run: |
           python -m py_compile bin/upload-sheet.py bin/test-upload-sheet.py bin/download-lite.py
-
-      - name: Strict Python 3.6 AST validation
-        # 确保所有源文件无 3.7+ 语法（from __future__ import annotations / list[X] / str | None / 等）
-        # 这与"在 3.6 runtime 跑"等价：syntax 3.6 通过 + 仅用 3.5+ stdlib = 行为与 3.6 一致
-        run: |
-          python -c "import ast; ast.parse(open('bin/upload-sheet.py').read(), feature_version=(3,6))"
-          python -c "import ast; ast.parse(open('bin/test-upload-sheet.py').read(), feature_version=(3,6))"
-          python -c "import ast; ast.parse(open('bin/download-lite.py').read(), feature_version=(3,6))"
 
       - name: Run upload-sheet mock test suite
         # 纯 stdlib + monkey-patch _http_json，无需飞书凭证
